@@ -1,0 +1,144 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Owner {
+  MATTHEW
+  GENEVIEVE
+  SHARED
+}
+
+enum AccountOwner {
+  MATTHEW
+  GENEVIEVE
+  SHARED
+}
+
+enum AssetType {
+  CHECKING
+  SAVINGS
+  BROKERAGE
+  FOUR_O_ONE_K
+  ROTH_IRA
+  HSA
+  CRYPTO
+  HOME_VALUE
+}
+
+enum LiabilityType {
+  MORTGAGE
+  CAR_LOAN
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Account {
+  id                    String        @id @default(cuid())
+  name                  String        @unique
+  owner                 AccountOwner
+  matthewSplitPercent   Int           @default(50)
+  genevieveSplitPercent Int           @default(50)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  transactions          Transaction[]
+}
+
+model Category {
+  id             String        @id @default(cuid())
+  name           String        @unique
+  excludedFromFi Boolean       @default(false)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  transactions   Transaction[]
+}
+
+model Tag {
+  id           String           @id @default(cuid())
+  name         String           @unique
+  createdAt    DateTime         @default(now())
+  transactions TransactionTag[]
+}
+
+model Transaction {
+  id                    String           @id @default(cuid())
+  date                  DateTime         @db.Date
+  amount                Decimal          @db.Decimal(12, 2)
+  description           String
+  notes                 String?
+  owner                 Owner
+  matthewSplitPercent   Int?
+  genevieveSplitPercent Int?
+  accountId             String?
+  account               Account?         @relation(fields: [accountId], references: [id])
+  categoryId            String?
+  category              Category?        @relation(fields: [categoryId], references: [id])
+  isManual              Boolean          @default(false)
+  importHash            String?          @unique
+  tags                  TransactionTag[]
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  @@index([date])
+  @@index([accountId])
+  @@index([categoryId])
+}
+
+model TransactionTag {
+  transactionId String
+  tagId         String
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  tag           Tag         @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([transactionId, tagId])
+}
+
+model Income {
+  id          String   @id @default(cuid())
+  date        DateTime @db.Date
+  source      String
+  description String?
+  amount      Decimal  @db.Decimal(12, 2)
+  owner       Owner
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([date])
+}
+
+model NetWorthSnapshot {
+  id        String            @id @default(cuid())
+  month     DateTime          @unique @db.Date
+  notes     String?
+  balances  NetWorthBalance[]
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+}
+
+model NetWorthBalance {
+  id            String           @id @default(cuid())
+  snapshotId    String
+  snapshot      NetWorthSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  assetType     AssetType?
+  liabilityType LiabilityType?
+  amount        Decimal          @db.Decimal(14, 2)
+  owner         Owner            @default(SHARED)
+
+  @@index([snapshotId])
+}
+
+model AppSettings {
+  id             String  @id @default("default")
+  withdrawalRate Decimal @default(0.04) @db.Decimal(5, 4)
+}

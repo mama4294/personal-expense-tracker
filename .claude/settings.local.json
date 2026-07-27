@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(sed -i '' 's|from \"@/generated/prisma\"|from \"@/generated/prisma/client\"|' src/lib/analytics.ts src/lib/fi.ts src/lib/splits.ts src/lib/db.ts)",
+      "Bash(sed -i '' 's|from \"../src/generated/prisma\"|from \"../src/generated/prisma/client\"|' prisma/seed.ts)",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(which pg_isready postgres psql podman colima docker 2>&1; echo \"---\"; ls /Applications | grep -i -E \"docker|orbstack|podman\" 2>/dev/null)",
+      "Bash(sort -k1 -n -r)",
+      "Bash(node scripts/validate_palette.js \"#2a78d6,#eb6834,#1baf7a,#eda100,#e87ba4,#008300,#4a3aa7,#e34948\" --mode light --surface \"#ffffff\")",
+      "Bash(npx prisma *)",
+      "Bash(echo \"exit=$?\")",
+      "Read(//tmp/**)",
+      "Bash(PORT=3117 DATABASE_URL=\"postgresql://finance:finance@localhost:5432/finance\" AUTH_SECRET=\"smoke-test-secret-value-not-real\" AUTH_URL=\"http://localhost:3117\" node .next/standalone/server.js)",
+      "Bash(curl -s -o /dev/null \"http://localhost:3117/login\")",
+      "Bash(break)",
+      "Bash(curl -s -o /dev/null -w \"status=%{http_code} location=%{redirect_url}\\\\n\" \"http://localhost:3117/\")",
+      "Bash(curl -s -o /dev/null -w \"status=%{http_code}\\\\n\" \"http://localhost:3117/login\")",
+      "Bash(curl -s -o /dev/null -w \"status=%{http_code} location=%{redirect_url}\\\\n\" \"http://localhost:3117/api/transactions\")",
+      "Bash(kill %1)",
+      "Bash(pkill -f \"standalone/server.js\")",
+      "Bash(npx tsx *)",
+      "Bash(PORT=3117 DATABASE_URL=\"postgresql://finance:finance@localhost:5432/finance\" AUTH_SECRET=\"local-preview-secret-not-for-deploy\" AUTH_URL=\"http://localhost:3117\" node .next/standalone/server.js)",
+      "Bash(nc -z localhost 55432)",
+      "Bash(DATABASE_URL=\"postgresql://finance:finance@localhost:55432/finance\" npx prisma migrate deploy)",
+      "Bash(DATABASE_URL=\"postgresql://finance:finance@localhost:55432/finance\" MATTHEW_PASSWORD=\"preview123\" GENEVIEVE_PASSWORD=\"preview123\" npx tsx prisma/seed.ts)",
+      "Bash(PORT=3118 DATABASE_URL=\"postgresql://finance:finance@localhost:55432/finance\" AUTH_SECRET=\"local-preview-only-secret-value\" AUTH_URL=\"http://localhost:3118\" NODE_ENV=production node .next/standalone/server.js)",
+      "Bash(curl -s -o /dev/null \"http://localhost:3118/login\")",
+      "Bash(curl -s -o /dev/null -w \"login status=%{http_code}\\\\n\" http://localhost:3118/login)"
+    ]
+  }
+}

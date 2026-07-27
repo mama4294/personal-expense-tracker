@@ -1,36 +1,121 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Personal Finance Dashboard
 
-## Getting Started
+Self-hosted personal finance tracking for Matthew and Genevieve.
 
-First, run the development server:
+## Features
+
+- CSV import (multi-file upload or paste) with duplicate detection
+- Account ownership and configurable shared-expense splits
+- Manual expenses, editable transactions, tags, and notes
+- Search and filter by date, card, person, category, tag, and amount range
+- Manual income entry with monthly and annual trends
+- Monthly net worth snapshots with editable history
+- Spending, income, net worth, and FI dashboards
+- Financial independence progress against a configurable withdrawal rate
+- Secure authentication with Auth.js
+
+## Stack
+
+- Next.js 16, React 19, TypeScript, Tailwind CSS 4
+- PostgreSQL 16 + Prisma 7 (with the `pg` driver adapter)
+- Recharts
+- Auth.js (NextAuth v5)
+- Docker Compose
+
+## Local Development
+
+1. Copy environment variables and set a real `AUTH_SECRET`:
+
+```bash
+cp .env.example .env
+```
+
+2. Start PostgreSQL (any local Postgres works; this uses the compose service):
+
+```bash
+docker compose up db -d
+```
+
+3. Install dependencies, apply migrations, and seed:
+
+```bash
+npm install
+npm run db:deploy
+npm run db:seed
+```
+
+4. Run the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+5. Sign in with the seeded users:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `matthew@finance.local`
+- `genevieve@finance.local`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Their initial passwords come from `MATTHEW_PASSWORD` and `GENEVIEVE_PASSWORD`.
+Change them under Settings → Profile; re-seeding does not overwrite a changed
+password.
 
-## Learn More
+## Production (Docker Compose)
 
-To learn more about Next.js, take a look at the following resources:
+Set `AUTH_SECRET`, `AUTH_URL`, `POSTGRES_PASSWORD`, and the two initial user
+passwords in `.env`, then:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+docker compose up -d --build
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The stack runs three services:
 
-## Deploy on Vercel
+- `db` — PostgreSQL with a named volume for persistence. No host port is
+  published; add a `ports` entry if you want to reach it from your LAN.
+- `migrate` — one-shot container that runs `prisma migrate deploy` and seeds
+  users, default categories, and default accounts, then exits.
+- `app` — the Next.js standalone server on port 3000, started only after
+  `migrate` completes successfully.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+`AUTH_SECRET` has no default, so compose fails fast rather than deploying with a
+known secret. Put the app behind your reverse proxy for HTTPS —
+`AUTH_TRUST_HOST` is already enabled for that.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Schema changes apply on rebuild: `docker compose up -d --build` reruns the
+`migrate` service against the existing volume.
+
+## Monthly Workflow
+
+1. Download credit card CSV exports
+2. Upload them on the Import page (several files at once is fine)
+3. Review the preview — new versus duplicate rows, unknown accounts
+4. Confirm the import
+5. Enter the month's income on the Income page
+6. Enter the month's balances on the Net Worth page
+7. Review the dashboards and FI progress
+
+## CSV Format
+
+| Date | Account | Description | Category | Tags | Amount |
+|------|---------|-------------|----------|------|--------|
+| 2026-07-01 | Credit Card - 9939 | Costco | Groceries | | 148.22 |
+
+- `Account` is matched by exact name against the accounts in Settings. Unmatched
+  names are flagged in the preview and import as shared with no card attached.
+- `Category` is matched case-insensitively; unknown categories are created.
+- `Tags` is a comma-separated list.
+- `Amount` is read as a magnitude, so both positive and negative export
+  conventions record the same expense. Refunds and credits therefore import as
+  spending — adjust those rows after import.
+- Duplicate detection compares date, account, description, and amount, both
+  against existing transactions and within the uploaded batch.
+
+## FI Calculations
+
+- **Annual spending** — trailing 12 months, excluding categories flagged
+  *Excluded from FI* in Settings.
+- **FI number** — annual spending ÷ withdrawal rate (default 4%).
+- **Current investments** — Brokerage, 401k, Roth IRA, and HSA balances from the
+  most recent net worth snapshot.
+- **Historical progress** — each snapshot month is measured against the spending
+  trailing *that* month, not against today's spending.
