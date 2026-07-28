@@ -29,7 +29,8 @@
       "Bash(curl -s -o /dev/null \"http://localhost:3118/login\")",
       "Bash(curl -s -o /dev/null -w \"login status=%{http_code}\\\\n\" http://localhost:3118/login)",
       "Bash(env -u DATABASE_URL npm run build)",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(env -u DATABASE_URL npx next build)"
     ]
   }
 }

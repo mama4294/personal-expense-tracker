@@ -3,7 +3,10 @@ FROM node:22-alpine AS base
 FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+# --ignore-scripts skips the `postinstall: prisma generate` hook, which would
+# fail here: this stage has the manifests but not prisma/schema.prisma. The
+# builder stage runs `prisma generate` explicitly once the source is present.
+RUN npm ci --ignore-scripts
 
 FROM base AS builder
 WORKDIR /app
