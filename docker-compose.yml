@@ -16,9 +16,8 @@ services:
 
   # Applies migrations and seeds users, categories, and accounts, then exits.
   migrate:
-    build:
-      context: .
-      target: migrator
+    image: ghcr.io/mama4294/personal-expense-tracker/migrate:${IMAGE_TAG:-latest}
+    pull_policy: always
     restart: "no"
     environment:
       DATABASE_URL: postgresql://finance:${POSTGRES_PASSWORD:-finance}@db:5432/finance
@@ -29,9 +28,8 @@ services:
         condition: service_healthy
 
   app:
-    build:
-      context: .
-      target: runner
+    image: ghcr.io/mama4294/personal-expense-tracker/app:${IMAGE_TAG:-latest}
+    pull_policy: always
     restart: unless-stopped
     ports:
       - "3000:3000"

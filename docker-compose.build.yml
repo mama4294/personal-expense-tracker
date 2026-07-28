@@ -1,0 +1,16 @@
+# Overlay that builds the images from source instead of pulling them from GHCR.
+# Useful before the first CI run, or if the registry is unreachable:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+services:
+  migrate:
+    build:
+      context: .
+      target: migrator
+    pull_policy: build
+
+  app:
+    build:
+      context: .
+      target: runner
+    pull_policy: build

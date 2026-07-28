@@ -61,12 +61,24 @@ password.
 
 ## Production (Docker Compose)
 
-Set `AUTH_SECRET`, `AUTH_URL`, `POSTGRES_PASSWORD`, and the two initial user
-passwords in `.env`, then:
+Images are built by GitHub Actions on every push to `main` and published to
+GHCR as `ghcr.io/mama4294/personal-expense-tracker/app` and `.../migrate`, so
+the server only pulls — it never builds. Set `AUTH_SECRET`, `AUTH_URL`,
+`POSTGRES_PASSWORD`, and the two initial user passwords in `.env`, then:
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
+
+To build from source instead — before the first CI run, or if GHCR is
+unreachable — add the build overlay:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```
+
+`IMAGE_TAG` defaults to `latest`; set it to a commit SHA in `.env` to pin or
+roll back.
 
 The stack runs three services:
 
