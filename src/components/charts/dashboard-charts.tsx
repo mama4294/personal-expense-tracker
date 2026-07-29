@@ -69,12 +69,17 @@ export function SimpleBarChart({
   yKey,
   valueFormat = "currency",
   name,
+  onSelect,
+  selected,
 }: {
   data: Record<string, string | number>[];
   xKey: string;
   yKey: string;
   valueFormat?: ValueFormat;
   name?: string;
+  /** Makes bars clickable; receives the category/account label that was hit. */
+  onSelect?: (label: string) => void;
+  selected?: string | null;
 }) {
   return (
     <ResponsiveContainer width="100%" height={320}>
@@ -92,6 +97,7 @@ export function SimpleBarChart({
         />
         <Tooltip
           contentStyle={tooltipStyle}
+          cursor={{ fill: "rgba(15, 23, 42, 0.04)" }}
           formatter={(value) => formatValue(Number(value), valueFormat)}
         />
         <Bar
@@ -99,7 +105,34 @@ export function SimpleBarChart({
           name={name ?? yKey}
           fill={SERIES_COLORS[0]}
           radius={[4, 4, 0, 0]}
-        />
+          cursor={onSelect ? "pointer" : undefined}
+          onClick={
+            onSelect
+              ? (entry: unknown) => {
+                  // Recharts hands back the rendered bar; the original row sits
+                  // on `payload`.
+                  const bar = entry as {
+                    payload?: Record<string, unknown>;
+                  } & Record<string, unknown>;
+                  onSelect(String(bar.payload?.[xKey] ?? bar[xKey] ?? ""));
+                }
+              : undefined
+          }
+        >
+          {onSelect
+            ? data.map((entry) => {
+                const label = String(entry[xKey] ?? "");
+                const dimmed = selected != null && selected !== label;
+                return (
+                  <Cell
+                    key={label}
+                    fill={SERIES_COLORS[0]}
+                    fillOpacity={dimmed ? 0.25 : 1}
+                  />
+                );
+              })
+            : null}
+        </Bar>
       </BarChart>
     </ResponsiveContainer>
   );
@@ -160,8 +193,13 @@ export function SimpleLineChart({
  */
 export function SimplePieChart({
   data,
+  onSelect,
+  selected,
 }: {
   data: { name: string; total: number }[];
+  /** Makes slices clickable; receives the slice label that was hit. */
+  onSelect?: (label: string) => void;
+  selected?: string | null;
 }) {
   const sorted = [...data].sort((a, b) => b.total - a.total);
   const slices = sorted.slice(0, SERIES_COLORS.length);
@@ -186,6 +224,12 @@ export function SimplePieChart({
           paddingAngle={2}
           stroke="#ffffff"
           strokeWidth={2}
+          cursor={onSelect ? "pointer" : undefined}
+          onClick={
+            onSelect
+              ? (entry: { name?: string }) => onSelect(String(entry.name ?? ""))
+              : undefined
+          }
         >
           {slices.map((slice, index) => (
             <Cell
@@ -194,6 +238,9 @@ export function SimplePieChart({
                 index < SERIES_COLORS.length
                   ? SERIES_COLORS[index]
                   : OTHER_COLOR
+              }
+              fillOpacity={
+                selected != null && selected !== slice.name ? 0.25 : 1
               }
             />
           ))}

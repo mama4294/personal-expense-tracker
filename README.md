@@ -5,7 +5,9 @@ net worth history, and financial-independence progress.
 
 ## Features
 
+- One Spending page combining charts, the transaction list, import, and entry
 - CSV import (multi-file upload or paste) with duplicate detection
+- Click-to-drill-down from any category or account into the underlying expenses
 - Any number of people, with configurable split percentages per account
 - Username logins, managed in Settings, separate from the people being split
 - Manual expenses, editable transactions, tags, and notes
@@ -108,12 +110,31 @@ Schema changes apply on rebuild: `docker compose up -d --build` reruns the
 ## Monthly Workflow
 
 1. Download credit card CSV exports
-2. Upload them on the Import page (several files at once is fine)
+2. On the Spending page, click **Import CSV** and pick the files (several at once
+   is fine)
 3. Review the preview — new versus duplicate rows, unknown accounts
 4. Confirm the import
 5. Enter the month's income on the Income page
 6. Enter the month's balances on the Net Worth page
 7. Review the dashboards and FI progress
+
+## The Spending page
+
+Importing, reviewing, and drilling into expenses all happen in one place:
+
+- **Person** — a Combined / per-person toggle across the top.
+- **Date range** — presets (this month, last month, last 3 months, year to date,
+  last 12 months, last year, all time) that fill the from/to inputs, which stay
+  editable for a custom range.
+- **Drill-down** — click a category slice, a category row, or an account bar to
+  filter the transaction list beneath. The charts deliberately keep their full
+  scope while you drill, so the chart you clicked doesn't collapse to one slice.
+  Active filters show as chips; click one to clear it.
+- **Add Expense** and **Import CSV** are buttons on this page rather than
+  separate screens.
+
+With a single person selected, the charts and the transaction list total both
+show that person's share, not the full household amount.
 
 ## CSV Format
 

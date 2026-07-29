@@ -18,7 +18,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
 
         const user = await db.user.findUnique({
-          where: { username: String(credentials.username).trim().toLowerCase() },
+          where: {
+            username: String(credentials.username).trim().toLowerCase(),
+          },
         });
 
         if (!user) return null;
