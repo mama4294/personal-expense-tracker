@@ -16,7 +16,7 @@ export async function GET() {
   return jsonOk({
     settings,
     categories,
-    user: user ? { id: user.id, name: user.name, email: user.email } : null,
+    user: user ? { id: user.id, name: user.name, username: user.username } : null,
   });
 }
 

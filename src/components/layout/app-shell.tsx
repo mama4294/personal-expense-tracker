@@ -41,14 +41,9 @@ export function AppShell({
             <p className="text-xs font-medium uppercase tracking-[0.2em] text-primary">
               Personal Finance
             </p>
-            <h1 className="text-lg font-semibold">Matthew & Genevieve</h1>
+            <h1 className="text-lg font-semibold">{userName ?? "Household"}</h1>
           </div>
           <div className="flex items-center gap-3">
-            {userName ? (
-              <span className="hidden text-sm text-muted-foreground sm:inline">
-                Signed in as {userName}
-              </span>
-            ) : null}
             <SignOutButton />
           </div>
         </div>

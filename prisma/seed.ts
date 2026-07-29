@@ -9,31 +9,21 @@ const db = new PrismaClient({
 });
 
 async function main() {
-  const matthewPassword = process.env.MATTHEW_PASSWORD ?? "changeme";
-  const genevievePassword = process.env.GENEVIEVE_PASSWORD ?? "changeme";
+  const username = (process.env.ADMIN_USERNAME ?? "admin").trim().toLowerCase();
+  const password = process.env.ADMIN_PASSWORD ?? "changeme";
+  const displayName = process.env.ADMIN_NAME ?? "Household";
 
-  const users = [
-    {
-      name: "Matthew",
-      email: "matthew@finance.local",
-      password: await bcrypt.hash(matthewPassword, 12),
+  // Only the initial create sets a password — re-seeding must not clobber a
+  // password that has since been changed in the app.
+  await db.user.upsert({
+    where: { username },
+    update: { name: displayName },
+    create: {
+      username,
+      name: displayName,
+      password: await bcrypt.hash(password, 12),
     },
-    {
-      name: "Genevieve",
-      email: "genevieve@finance.local",
-      password: await bcrypt.hash(genevievePassword, 12),
-    },
-  ];
-
-  for (const user of users) {
-    // Only the initial create sets a password — re-seeding must not clobber a
-    // password the user has since changed in the app.
-    await db.user.upsert({
-      where: { email: user.email },
-      update: { name: user.name },
-      create: user,
-    });
-  }
+  });
 
   for (const name of DEFAULT_CATEGORIES) {
     await db.category.upsert({
@@ -49,39 +39,9 @@ async function main() {
     create: { withdrawalRate: 0.04 },
   });
 
-  const defaultAccounts = [
-    { name: "Checking - 8803", owner: "MATTHEW" as const },
-    { name: "Credit Card - 9939", owner: "MATTHEW" as const },
-    { name: "Credit Card - Ending in 2836", owner: "MATTHEW" as const },
-    {
-      name: "Venture X - Ending in 4344",
-      owner: "SHARED" as const,
-      matthewSplitPercent: 50,
-      genevieveSplitPercent: 50,
-    },
-    {
-      name: "American Express Gold - Ending in 1006",
-      owner: "SHARED" as const,
-      matthewSplitPercent: 50,
-      genevieveSplitPercent: 50,
-    },
-  ];
-
-  for (const account of defaultAccounts) {
-    // Leave existing accounts alone; ownership and splits are managed in the app.
-    await db.account.upsert({
-      where: { name: account.name },
-      update: {},
-      create: {
-        name: account.name,
-        owner: account.owner,
-        matthewSplitPercent: account.matthewSplitPercent ?? 100,
-        genevieveSplitPercent: account.genevieveSplitPercent ?? 0,
-      },
-    });
-  }
-
-  console.log("Seed complete");
+  // People and accounts are deliberately not seeded: they are specific to the
+  // household and are created from Settings after the first sign-in.
+  console.log(`Seed complete. Sign in as "${username}".`);
 }
 
 main()

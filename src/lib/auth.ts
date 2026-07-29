@@ -9,16 +9,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
     Credentials({
       credentials: {
-        email: { label: "Email", type: "email" },
+        username: { label: "Username", type: "text" },
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
+        if (!credentials?.username || !credentials?.password) {
           return null;
         }
 
         const user = await db.user.findUnique({
-          where: { email: String(credentials.email).toLowerCase() },
+          where: { username: String(credentials.username).trim().toLowerCase() },
         });
 
         if (!user) return null;
@@ -33,7 +33,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return {
           id: user.id,
           name: user.name,
-          email: user.email,
         };
       },
     }),

@@ -37,11 +37,10 @@ import {
 import {
   formatCurrency,
   formatCurrencyPrecise,
-  OWNER_LABELS,
   toDateInputValue,
 } from "@/lib/utils";
 
-type IncomeOwner = "MATTHEW" | "GENEVIEVE";
+type Person = { id: string; name: string; isActive: boolean };
 
 type IncomeEntry = {
   id: string;
@@ -49,7 +48,8 @@ type IncomeEntry = {
   source: string;
   description: string | null;
   amount: string;
-  owner: IncomeOwner;
+  personId: string;
+  person: { id: string; name: string };
 };
 
 type IncomeData = {
@@ -65,12 +65,13 @@ const emptyForm = {
   source: "",
   description: "",
   amount: "",
-  owner: "MATTHEW" as IncomeOwner,
+  personId: "",
 };
 
 export default function IncomePage() {
   const [data, setData] = useState<IncomeData | null>(null);
   const [entries, setEntries] = useState<IncomeEntry[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
   const [form, setForm] = useState(emptyForm);
   const [editing, setEditing] = useState<(typeof emptyForm & { id: string }) | null>(
     null,
@@ -81,19 +82,23 @@ export default function IncomePage() {
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    const [dashboardResponse, entriesResponse] = await Promise.all([
+    const [dashboardResponse, entriesResponse, peopleResponse] = await Promise.all([
       fetch("/api/dashboard/income"),
       fetch("/api/income"),
+      fetch("/api/people"),
     ]);
 
-    if (!dashboardResponse.ok || !entriesResponse.ok) {
+    if (!dashboardResponse.ok || !entriesResponse.ok || !peopleResponse.ok) {
       setMessage({ tone: "error", text: "Could not load income data." });
       return;
     }
 
     setData(await dashboardResponse.json());
     setEntries(await entriesResponse.json());
+    setPeople(await peopleResponse.json());
   }, []);
+
+  const activePeople = people.filter((person) => person.isActive);
 
   useEffect(() => {
     async function run() {
@@ -119,7 +124,7 @@ export default function IncomePage() {
         source: values.source,
         description: values.description || undefined,
         amount: Number(values.amount),
-        owner: values.owner,
+        personId: values.personId,
       }),
     });
 
@@ -245,17 +250,20 @@ export default function IncomePage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Owner</Label>
+              <Label>Person</Label>
               <Select
-                value={form.owner}
-                onValueChange={(value) =>
-                  setForm({ ...form, owner: value as IncomeOwner })
-                }
+                value={form.personId}
+                onValueChange={(value) => setForm({ ...form, personId: value })}
               >
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a person" />
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="MATTHEW">Matthew</SelectItem>
-                  <SelectItem value="GENEVIEVE">Genevieve</SelectItem>
+                  {activePeople.map((person) => (
+                    <SelectItem key={person.id} value={person.id}>
+                      {person.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -269,9 +277,17 @@ export default function IncomePage() {
               />
             </div>
             <div className="md:col-span-2">
-              <Button type="submit" disabled={saving}>
+              <Button
+                type="submit"
+                disabled={saving || !form.personId || activePeople.length === 0}
+              >
                 Save Income
               </Button>
+              {activePeople.length === 0 ? (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Add people under Settings → People before recording income.
+                </p>
+              ) : null}
             </div>
           </form>
         </CardContent>
@@ -348,7 +364,7 @@ export default function IncomePage() {
                 <TableHead>Date</TableHead>
                 <TableHead>Source</TableHead>
                 <TableHead>Description</TableHead>
-                <TableHead>Owner</TableHead>
+                <TableHead>Person</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -361,7 +377,7 @@ export default function IncomePage() {
                   </TableCell>
                   <TableCell>{entry.source}</TableCell>
                   <TableCell>{entry.description ?? "—"}</TableCell>
-                  <TableCell>{OWNER_LABELS[entry.owner]}</TableCell>
+                  <TableCell>{entry.person.name}</TableCell>
                   <TableCell className="text-right tabular-nums">
                     {formatCurrencyPrecise(Number(entry.amount))}
                   </TableCell>
@@ -378,7 +394,7 @@ export default function IncomePage() {
                             source: entry.source,
                             description: entry.description ?? "",
                             amount: String(Number(entry.amount)),
-                            owner: entry.owner,
+                            personId: entry.personId,
                           })
                         }
                       >
@@ -450,17 +466,20 @@ export default function IncomePage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Owner</Label>
+                <Label>Person</Label>
                 <Select
-                  value={editing.owner}
+                  value={editing.personId}
                   onValueChange={(value) =>
-                    setEditing({ ...editing, owner: value as IncomeOwner })
+                    setEditing({ ...editing, personId: value })
                   }
                 >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="MATTHEW">Matthew</SelectItem>
-                    <SelectItem value="GENEVIEVE">Genevieve</SelectItem>
+                    {activePeople.map((person) => (
+                      <SelectItem key={person.id} value={person.id}>
+                        {person.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

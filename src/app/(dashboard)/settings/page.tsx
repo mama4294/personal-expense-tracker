@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  Badge,
   Table,
   TableBody,
   TableCell,
@@ -22,16 +23,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { OWNER_LABELS } from "@/lib/utils";
-
-type AccountOwner = "MATTHEW" | "GENEVIEVE" | "SHARED";
+import {
+  describeSplitRows,
+  evenSplit,
+  SplitEditor,
+  splitTotal,
+  type Person,
+  type SplitRow,
+} from "@/components/people/split-editor";
 
 type Account = {
   id: string;
   name: string;
-  owner: AccountOwner;
-  matthewSplitPercent: number;
-  genevieveSplitPercent: number;
+  splits: SplitRow[];
 };
 
 type Category = {
@@ -40,49 +44,76 @@ type Category = {
   excludedFromFi: boolean;
 };
 
+type Login = {
+  id: string;
+  username: string;
+  name: string;
+  createdAt: string;
+};
+
 type Message = { tone: "error" | "ok"; text: string } | null;
 
 export default function SettingsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
+  const [logins, setLogins] = useState<Login[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [withdrawalRate, setWithdrawalRate] = useState("0.04");
   const [message, setMessage] = useState<Message>(null);
   const [saving, setSaving] = useState(false);
 
   // Draft copies so a row can be edited and then saved explicitly.
-  const [accountDrafts, setAccountDrafts] = useState<Record<string, Account>>({});
+  const [accountNames, setAccountNames] = useState<Record<string, string>>({});
+  const [accountSplits, setAccountSplits] = useState<Record<string, SplitRow[]>>({});
   const [categoryDrafts, setCategoryDrafts] = useState<Record<string, string>>({});
   const [mergeTargets, setMergeTargets] = useState<Record<string, string>>({});
+  const [personNames, setPersonNames] = useState<Record<string, string>>({});
 
-  const [newAccount, setNewAccount] = useState({
-    name: "",
-    owner: "SHARED" as AccountOwner,
-    matthewSplitPercent: "50",
-  });
+  const [newAccount, setNewAccount] = useState({ name: "" });
+  const [newAccountSplits, setNewAccountSplits] = useState<SplitRow[]>([]);
   const [newCategory, setNewCategory] = useState("");
+  const [newPerson, setNewPerson] = useState("");
+  const [newLogin, setNewLogin] = useState({ username: "", name: "", password: "" });
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: "",
     newPassword: "",
   });
 
-  const loadSettings = useCallback(async () => {
-    const [accountResponse, settingsResponse] = await Promise.all([
-      fetch("/api/accounts"),
-      fetch("/api/settings"),
-    ]);
+  const activePeople = people.filter((person) => person.isActive);
 
-    if (!accountResponse.ok || !settingsResponse.ok) {
+  const loadSettings = useCallback(async () => {
+    const [accountResponse, settingsResponse, peopleResponse, loginResponse] =
+      await Promise.all([
+        fetch("/api/accounts"),
+        fetch("/api/settings"),
+        fetch("/api/people"),
+        fetch("/api/users"),
+      ]);
+
+    if (
+      !accountResponse.ok ||
+      !settingsResponse.ok ||
+      !peopleResponse.ok ||
+      !loginResponse.ok
+    ) {
       setMessage({ tone: "error", text: "Could not load settings." });
       return;
     }
 
     const accountData: Account[] = await accountResponse.json();
     const settingsData = await settingsResponse.json();
+    const peopleData: Person[] = await peopleResponse.json();
+    const loginData: Login[] = await loginResponse.json();
 
     setAccounts(accountData);
-    setAccountDrafts(
-      Object.fromEntries(accountData.map((account) => [account.id, account])),
+    setAccountNames(
+      Object.fromEntries(accountData.map((account) => [account.id, account.name])),
     );
+    setAccountSplits(
+      Object.fromEntries(accountData.map((account) => [account.id, account.splits])),
+    );
+
     setCategories(settingsData.categories ?? []);
     setCategoryDrafts(
       Object.fromEntries(
@@ -93,6 +124,15 @@ export default function SettingsPage() {
       ),
     );
     setWithdrawalRate(String(settingsData.settings?.withdrawalRate ?? 0.04));
+    setCurrentUserId(settingsData.user?.id ?? null);
+
+    setPeople(peopleData);
+    setPersonNames(
+      Object.fromEntries(peopleData.map((person) => [person.id, person.name])),
+    );
+    setLogins(loginData);
+
+    setNewAccountSplits(evenSplit(peopleData.filter((person) => person.isActive)));
   }, []);
 
   useEffect(() => {
@@ -129,50 +169,97 @@ export default function SettingsPage() {
     return true;
   }
 
-  async function addAccount() {
-    const matthew = Math.min(
-      Math.max(Number(newAccount.matthewSplitPercent) || 0, 0),
-      100,
+  // --- People ---------------------------------------------------------------
+
+  async function addPerson() {
+    const created = await mutate(
+      "/api/people",
+      { method: "POST", body: JSON.stringify({ name: newPerson }) },
+      `${newPerson} added.`,
     );
+    if (created) setNewPerson("");
+  }
+
+  async function renamePerson(person: Person) {
+    const name = personNames[person.id]?.trim();
+    if (!name || name === person.name) return;
+    await mutate(
+      `/api/people/${person.id}`,
+      { method: "PATCH", body: JSON.stringify({ name }) },
+      "Person renamed.",
+    );
+  }
+
+  async function togglePerson(person: Person) {
+    await mutate(
+      `/api/people/${person.id}`,
+      { method: "PATCH", body: JSON.stringify({ isActive: !person.isActive }) },
+      person.isActive ? `${person.name} deactivated.` : `${person.name} reactivated.`,
+    );
+  }
+
+  async function deletePerson(person: Person) {
+    if (!window.confirm(`Delete ${person.name}?`)) return;
+    await mutate(
+      `/api/people/${person.id}`,
+      { method: "DELETE" },
+      `${person.name} deleted.`,
+    );
+  }
+
+  // --- Logins ---------------------------------------------------------------
+
+  async function addLogin() {
+    const created = await mutate(
+      "/api/users",
+      { method: "POST", body: JSON.stringify(newLogin) },
+      `Login "${newLogin.username}" created.`,
+    );
+    if (created) setNewLogin({ username: "", name: "", password: "" });
+  }
+
+  async function deleteLogin(login: Login) {
+    if (!window.confirm(`Delete the login "${login.username}"?`)) return;
+    await mutate(`/api/users/${login.id}`, { method: "DELETE" }, "Login deleted.");
+  }
+
+  // --- Accounts -------------------------------------------------------------
+
+  async function addAccount() {
+    if (splitTotal(newAccountSplits) !== 100) {
+      setMessage({ tone: "error", text: "Account shares must add up to 100%." });
+      return;
+    }
+
     const created = await mutate(
       "/api/accounts",
       {
         method: "POST",
         body: JSON.stringify({
           name: newAccount.name,
-          owner: newAccount.owner,
-          matthewSplitPercent:
-            newAccount.owner === "SHARED"
-              ? matthew
-              : newAccount.owner === "MATTHEW"
-                ? 100
-                : 0,
-          genevieveSplitPercent:
-            newAccount.owner === "SHARED"
-              ? 100 - matthew
-              : newAccount.owner === "GENEVIEVE"
-                ? 100
-                : 0,
+          splits: newAccountSplits.filter((split) => split.percent > 0),
         }),
       },
       "Account added.",
     );
 
-    if (created) {
-      setNewAccount({ name: "", owner: "SHARED", matthewSplitPercent: "50" });
-    }
+    if (created) setNewAccount({ name: "" });
   }
 
-  async function saveAccount(draft: Account) {
+  async function saveAccount(account: Account) {
+    const splits = accountSplits[account.id] ?? [];
+    if (splitTotal(splits) !== 100) {
+      setMessage({ tone: "error", text: "Account shares must add up to 100%." });
+      return;
+    }
+
     await mutate(
-      `/api/accounts/${draft.id}`,
+      `/api/accounts/${account.id}`,
       {
         method: "PATCH",
         body: JSON.stringify({
-          name: draft.name,
-          owner: draft.owner,
-          matthewSplitPercent: draft.matthewSplitPercent,
-          genevieveSplitPercent: draft.genevieveSplitPercent,
+          name: accountNames[account.id],
+          splits: splits.filter((split) => split.percent > 0),
         }),
       },
       "Account updated.",
@@ -187,6 +274,8 @@ export default function SettingsPage() {
       "Account deleted.",
     );
   }
+
+  // --- Categories -----------------------------------------------------------
 
   async function addCategory() {
     const created = await mutate(
@@ -243,7 +332,10 @@ export default function SettingsPage() {
       `/api/categories/${category.id}`,
       {
         method: "PATCH",
-        body: JSON.stringify({ action: "split", newCategoryName: newCategoryName.trim() }),
+        body: JSON.stringify({
+          action: "split",
+          newCategoryName: newCategoryName.trim(),
+        }),
       },
       `Created ${newCategoryName.trim()}. Reassign transactions from the Expenses page.`,
     );
@@ -264,6 +356,8 @@ export default function SettingsPage() {
       "Category deleted.",
     );
   }
+
+  // --- FI + profile ---------------------------------------------------------
 
   async function saveFiSettings() {
     await mutate(
@@ -294,15 +388,12 @@ export default function SettingsPage() {
     if (updated) setPasswordForm({ currentPassword: "", newPassword: "" });
   }
 
-  const byOwner = (owner: AccountOwner) =>
-    accounts.filter((account) => account.owner === owner);
-
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-semibold">Settings</h2>
         <p className="text-sm text-muted-foreground">
-          Manage accounts, categories, FI assumptions, and your profile.
+          Manage people, logins, accounts, categories, and FI assumptions.
         </p>
       </div>
 
@@ -318,224 +409,200 @@ export default function SettingsPage() {
         </p>
       ) : null}
 
-      <Tabs defaultValue="accounts">
+      <Tabs defaultValue="people">
         <TabsList>
+          <TabsTrigger value="people">People</TabsTrigger>
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
           <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="fi">FI Settings</TabsTrigger>
+          <TabsTrigger value="logins">Logins</TabsTrigger>
           <TabsTrigger value="profile">Profile</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="accounts" className="space-y-4">
-          <div className="grid gap-4 xl:grid-cols-3">
-            {(["MATTHEW", "GENEVIEVE", "SHARED"] as AccountOwner[]).map((owner) => (
-              <Card key={owner}>
-                <CardHeader>
-                  <CardTitle>
-                    {owner === "SHARED"
-                      ? "Shared Cards"
-                      : `${OWNER_LABELS[owner]}'s Cards`}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {byOwner(owner).map((account) => (
-                    <div key={account.id} className="rounded-lg border p-3 text-sm">
-                      {account.name}
-                      {owner === "SHARED" ? (
-                        <p className="text-xs text-muted-foreground">
-                          Split {account.matthewSplitPercent}/
-                          {account.genevieveSplitPercent}
-                        </p>
-                      ) : null}
-                    </div>
-                  ))}
-                  {byOwner(owner).length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No accounts yet.</p>
-                  ) : null}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
+        <TabsContent value="people" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Edit Accounts</CardTitle>
+              <CardTitle>People</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Everyone expenses are split between. People don&apos;t sign in — they
+                only carry shares. Deactivate someone to keep their history while
+                removing them from new splits.
+              </p>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
-                    <TableHead>Owner</TableHead>
-                    <TableHead>Matthew %</TableHead>
-                    <TableHead>Genevieve %</TableHead>
+                    <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {accounts.map((account) => {
-                    const draft = accountDrafts[account.id] ?? account;
-                    const isShared = draft.owner === "SHARED";
-
-                    return (
-                      <TableRow key={account.id}>
-                        <TableCell>
-                          <Input
-                            value={draft.name}
-                            onChange={(event) =>
-                              setAccountDrafts({
-                                ...accountDrafts,
-                                [account.id]: { ...draft, name: event.target.value },
-                              })
-                            }
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Select
-                            value={draft.owner}
-                            onValueChange={(value) => {
-                              const owner = value as AccountOwner;
-                              setAccountDrafts({
-                                ...accountDrafts,
-                                [account.id]: {
-                                  ...draft,
-                                  owner,
-                                  matthewSplitPercent:
-                                    owner === "MATTHEW"
-                                      ? 100
-                                      : owner === "GENEVIEVE"
-                                        ? 0
-                                        : draft.matthewSplitPercent,
-                                  genevieveSplitPercent:
-                                    owner === "GENEVIEVE"
-                                      ? 100
-                                      : owner === "MATTHEW"
-                                        ? 0
-                                        : draft.genevieveSplitPercent,
-                                },
-                              });
-                            }}
+                  {people.map((person) => (
+                    <TableRow key={person.id}>
+                      <TableCell>
+                        <Input
+                          value={personNames[person.id] ?? person.name}
+                          onChange={(event) =>
+                            setPersonNames({
+                              ...personNames,
+                              [person.id]: event.target.value,
+                            })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={person.isActive ? "success" : "secondary"}>
+                          {person.isActive ? "active" : "inactive"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <span className="flex flex-wrap justify-end gap-2">
+                          <Button
+                            size="sm"
+                            disabled={saving}
+                            onClick={() => renamePerson(person)}
                           >
-                            <SelectTrigger className="min-w-[130px]">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="MATTHEW">Matthew</SelectItem>
-                              <SelectItem value="GENEVIEVE">Genevieve</SelectItem>
-                              <SelectItem value="SHARED">Shared</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            min="0"
-                            max="100"
-                            className="max-w-[100px]"
-                            disabled={!isShared}
-                            value={draft.matthewSplitPercent}
-                            onChange={(event) => {
-                              const matthew = Math.min(
-                                Math.max(Number(event.target.value) || 0, 0),
-                                100,
-                              );
-                              setAccountDrafts({
-                                ...accountDrafts,
-                                [account.id]: {
-                                  ...draft,
-                                  matthewSplitPercent: matthew,
-                                  genevieveSplitPercent: 100 - matthew,
-                                },
-                              });
-                            }}
-                          />
-                        </TableCell>
-                        <TableCell className="tabular-nums">
-                          {draft.genevieveSplitPercent}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <span className="flex justify-end gap-2">
-                            <Button
-                              size="sm"
-                              disabled={saving}
-                              onClick={() => saveAccount(draft)}
-                            >
-                              Save
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label={`Delete ${account.name}`}
-                              disabled={saving}
-                              onClick={() => deleteAccount(account)}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </span>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                            Rename
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={saving}
+                            onClick={() => togglePerson(person)}
+                          >
+                            {person.isActive ? "Deactivate" : "Reactivate"}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Delete ${person.name}`}
+                            disabled={saving}
+                            onClick={() => deletePerson(person)}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {people.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={3} className="text-muted-foreground">
+                        No people yet. Add one below to start splitting expenses.
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
                 </TableBody>
               </Table>
             </CardContent>
           </Card>
 
           <Card>
+            <CardHeader><CardTitle>Add Person</CardTitle></CardHeader>
+            <CardContent className="flex flex-wrap gap-3">
+              <Input
+                className="max-w-xs"
+                placeholder="Name"
+                value={newPerson}
+                onChange={(event) => setNewPerson(event.target.value)}
+              />
+              <Button onClick={addPerson} disabled={saving || !newPerson.trim()}>
+                Add
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="accounts" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Accounts</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Each account carries a default split. Imported transactions inherit it,
+                so changing an account&apos;s shares re-attributes its history.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {accounts.map((account) => (
+                <div key={account.id} className="space-y-3 rounded-xl border p-4">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Input
+                      className="max-w-sm"
+                      value={accountNames[account.id] ?? account.name}
+                      onChange={(event) =>
+                        setAccountNames({
+                          ...accountNames,
+                          [account.id]: event.target.value,
+                        })
+                      }
+                    />
+                    <Badge variant="outline">
+                      {describeSplitRows(accountSplits[account.id] ?? [], people)}
+                    </Badge>
+                    <span className="ml-auto flex gap-2">
+                      <Button
+                        size="sm"
+                        disabled={saving}
+                        onClick={() => saveAccount(account)}
+                      >
+                        Save
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Delete ${account.name}`}
+                        disabled={saving}
+                        onClick={() => deleteAccount(account)}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </span>
+                  </div>
+                  <SplitEditor
+                    people={activePeople}
+                    splits={accountSplits[account.id] ?? []}
+                    onChange={(splits) =>
+                      setAccountSplits({ ...accountSplits, [account.id]: splits })
+                    }
+                  />
+                </div>
+              ))}
+              {accounts.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No accounts yet. Add the cards and bank accounts your CSV exports use.
+                </p>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card>
             <CardHeader><CardTitle>Add Account</CardTitle></CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
+            <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label>Name</Label>
                 <Input
+                  className="max-w-sm"
                   placeholder="Credit Card - 9939"
                   value={newAccount.name}
-                  onChange={(event) =>
-                    setNewAccount({ ...newAccount, name: event.target.value })
-                  }
+                  onChange={(event) => setNewAccount({ name: event.target.value })}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Must match the Account column in your CSV exports exactly.
+                </p>
               </div>
-              <div className="space-y-2">
-                <Label>Owner</Label>
-                <Select
-                  value={newAccount.owner}
-                  onValueChange={(value) =>
-                    setNewAccount({ ...newAccount, owner: value as AccountOwner })
-                  }
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="MATTHEW">Matthew</SelectItem>
-                    <SelectItem value="GENEVIEVE">Genevieve</SelectItem>
-                    <SelectItem value="SHARED">Shared</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {newAccount.owner === "SHARED" ? (
-                <div className="space-y-2">
-                  <Label>Matthew split %</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={newAccount.matthewSplitPercent}
-                    onChange={(event) =>
-                      setNewAccount({
-                        ...newAccount,
-                        matthewSplitPercent: event.target.value,
-                      })
-                    }
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Genevieve takes the remaining{" "}
-                    {100 - (Number(newAccount.matthewSplitPercent) || 0)}%.
-                  </p>
-                </div>
-              ) : null}
-              <div className="flex items-end">
-                <Button onClick={addAccount} disabled={saving || !newAccount.name}>
-                  Add Account
-                </Button>
-              </div>
+              <SplitEditor
+                people={activePeople}
+                splits={newAccountSplits}
+                onChange={setNewAccountSplits}
+              />
+              <Button
+                onClick={addAccount}
+                disabled={saving || !newAccount.name.trim() || activePeople.length === 0}
+              >
+                Add Account
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -707,6 +774,113 @@ export default function SettingsPage() {
               <Button onClick={saveFiSettings} disabled={saving}>
                 Save FI Settings
               </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="logins" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Logins</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Anyone with a login sees all of this household&apos;s finances. Logins
+                are separate from People — one login can cover everybody.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Username</TableHead>
+                    <TableHead>Display name</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {logins.map((login) => (
+                    <TableRow key={login.id}>
+                      <TableCell className="font-medium">
+                        {login.username}
+                        {login.id === currentUserId ? (
+                          <Badge variant="outline" className="ml-2">
+                            you
+                          </Badge>
+                        ) : null}
+                      </TableCell>
+                      <TableCell>{login.name}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Delete ${login.username}`}
+                          disabled={saving || login.id === currentUserId}
+                          onClick={() => deleteLogin(login)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>Create Login</CardTitle></CardHeader>
+            <CardContent className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Username</Label>
+                <Input
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  placeholder="malone"
+                  value={newLogin.username}
+                  onChange={(event) =>
+                    setNewLogin({ ...newLogin, username: event.target.value })
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Letters, numbers, dots, underscores, and hyphens.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>Display name</Label>
+                <Input
+                  placeholder="Malone Household"
+                  value={newLogin.name}
+                  onChange={(event) =>
+                    setNewLogin({ ...newLogin, name: event.target.value })
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Password</Label>
+                <Input
+                  type="password"
+                  autoComplete="new-password"
+                  value={newLogin.password}
+                  onChange={(event) =>
+                    setNewLogin({ ...newLogin, password: event.target.value })
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  At least 8 characters.
+                </p>
+              </div>
+              <div className="flex items-end">
+                <Button
+                  onClick={addLogin}
+                  disabled={
+                    saving ||
+                    !newLogin.username.trim() ||
+                    !newLogin.name.trim() ||
+                    newLogin.password.length < 8
+                  }
+                >
+                  Create Login
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

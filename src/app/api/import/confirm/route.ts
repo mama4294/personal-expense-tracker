@@ -1,7 +1,6 @@
 import { requireAuth, jsonOk, jsonError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { parseCsvContent, parseDateString } from "@/lib/import";
-import { resolveOwnerFromAccount } from "@/lib/splits";
 import { upsertTags } from "@/lib/analytics";
 
 export async function POST(request: Request) {
@@ -54,12 +53,14 @@ export async function POST(request: Request) {
 
       const tags = row.tags.length > 0 ? await upsertTags(row.tags) : [];
 
+      // No split rows are written: imported rows inherit their account's
+      // default split, so changing an account's ownership later re-attributes
+      // its history automatically.
       const transaction = await db.transaction.create({
         data: {
           date: parseDateString(row.date),
           amount: row.amount,
           description: row.description,
-          owner: account ? resolveOwnerFromAccount(account.owner) : "SHARED",
           accountId: account?.id,
           categoryId,
           importHash: row.importHash,

@@ -1,12 +1,18 @@
 import { requireAuth, jsonOk, jsonError, jsonDbError } from "@/lib/api";
 import { db } from "@/lib/db";
+import { validateSplits } from "@/lib/splits";
 import { z } from "zod";
 
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
-  owner: z.enum(["MATTHEW", "GENEVIEVE", "SHARED"]).optional(),
-  matthewSplitPercent: z.number().int().min(0).max(100).optional(),
-  genevieveSplitPercent: z.number().int().min(0).max(100).optional(),
+  splits: z
+    .array(
+      z.object({
+        personId: z.string().min(1),
+        percent: z.number().int().min(0).max(100),
+      }),
+    )
+    .optional(),
 });
 
 export async function PATCH(
@@ -22,20 +28,24 @@ export async function PATCH(
     return jsonError(parsed.error.issues[0]?.message ?? "Invalid account update");
   }
 
-  const { matthewSplitPercent, genevieveSplitPercent } = parsed.data;
-  if (
-    matthewSplitPercent != null &&
-    genevieveSplitPercent != null &&
-    matthewSplitPercent + genevieveSplitPercent !== 100
-  ) {
-    return jsonError("Split percentages must add up to 100.");
+  const splits = parsed.data.splits?.filter((split) => split.percent > 0);
+  if (splits) {
+    const invalid = validateSplits(splits);
+    if (invalid) return jsonError(invalid);
   }
 
   try {
     const account = await db.account.update({
       where: { id },
-      data: parsed.data,
+      data: {
+        name: parsed.data.name?.trim(),
+        ...(splits
+          ? { splits: { deleteMany: {}, create: splits } }
+          : {}),
+      },
+      include: { splits: true },
     });
+
     return jsonOk(account);
   } catch (updateError) {
     return jsonDbError(updateError, "Could not update the account.");

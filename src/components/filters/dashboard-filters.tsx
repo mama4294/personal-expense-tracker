@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export type FilterState = {
-  person: "MATTHEW" | "GENEVIEVE" | "COMBINED";
+  /** A person id, or "COMBINED" for the whole household. */
+  person: string;
   startDate: string;
   endDate: string;
   categoryId: string;
@@ -34,12 +35,14 @@ export function DashboardFilters({
   onChange,
   categories,
   accounts,
+  people,
   showSearch = false,
 }: {
   filters: FilterState;
   onChange: (filters: FilterState) => void;
   categories: { id: string; name: string }[];
   accounts: { id: string; name: string }[];
+  people: { id: string; name: string }[];
   showSearch?: boolean;
 }) {
   return (
@@ -48,17 +51,18 @@ export function DashboardFilters({
         <Label>Person</Label>
         <Select
           value={filters.person}
-          onValueChange={(value) =>
-            onChange({ ...filters, person: value as FilterState["person"] })
-          }
+          onValueChange={(value) => onChange({ ...filters, person: value })}
         >
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="COMBINED">Combined</SelectItem>
-            <SelectItem value="MATTHEW">Matthew</SelectItem>
-            <SelectItem value="GENEVIEVE">Genevieve</SelectItem>
+            {people.map((person) => (
+              <SelectItem key={person.id} value={person.id}>
+                {person.name}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>

@@ -6,13 +6,16 @@ import {
   type FiTransaction,
 } from "@/lib/fi";
 import {
-  getPersonAmounts,
   matchesPersonFilter,
   personFilteredAmount,
+  resolveSplitPercents,
+  splitAmounts,
+  type PersonFilter,
+  type SplitRow,
 } from "@/lib/splits";
-import type { Owner, Prisma } from "@/generated/prisma/client";
+import type { Prisma } from "@/generated/prisma/client";
 
-export type PersonFilter = "MATTHEW" | "GENEVIEVE" | "COMBINED";
+export type { PersonFilter };
 
 export type DashboardFilters = {
   person?: PersonFilter;
@@ -44,8 +47,7 @@ export function filtersFromSearchParams(
   const person = searchParams.get("person");
 
   return {
-    person:
-      person === "MATTHEW" || person === "GENEVIEVE" ? person : "COMBINED",
+    person: person && person !== "COMBINED" ? person : "COMBINED",
     startDate: date("startDate"),
     endDate: date("endDate"),
     categoryId: searchParams.get("categoryId") ?? undefined,
@@ -95,56 +97,82 @@ function buildTransactionWhere(filters: DashboardFilters): Prisma.TransactionWhe
   return where;
 }
 
+export async function getActivePeople() {
+  return db.person.findMany({
+    where: { isActive: true },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+  });
+}
+
 export async function getTransactionsWithDetails(filters: DashboardFilters = {}) {
   return db.transaction.findMany({
     where: buildTransactionWhere(filters),
     include: {
-      account: true,
+      account: { include: { splits: true } },
       category: true,
+      splits: true,
       tags: { include: { tag: true } },
     },
     orderBy: { date: "desc" },
   });
 }
 
+type DetailedTransaction = Awaited<
+  ReturnType<typeof getTransactionsWithDetails>
+>[number];
+
+function toSplitRows(rows: { personId: string; percent: number }[]): SplitRow[] {
+  return rows.map((row) => ({ personId: row.personId, percent: row.percent }));
+}
+
 export function mapTransactionAmounts(
-  transactions: Awaited<ReturnType<typeof getTransactionsWithDetails>>,
+  transactions: DetailedTransaction[],
+  activePersonIds: string[],
   person: PersonFilter = "COMBINED",
 ) {
   return transactions.map((transaction) => {
     const amount = Number(transaction.amount);
-    const split = getPersonAmounts(amount, transaction, transaction.account);
-    const filteredAmount = personFilteredAmount(person, amount, split);
+    const splits = resolveSplitPercents(
+      toSplitRows(transaction.splits),
+      transaction.account ? toSplitRows(transaction.account.splits) : null,
+      activePersonIds,
+    );
+    const amounts = splitAmounts(amount, splits);
 
     return {
       ...transaction,
       amount,
-      split,
-      filteredAmount,
+      splits,
+      amounts,
+      hasOverride: transaction.splits.length > 0,
+      filteredAmount: personFilteredAmount(person, amount, amounts),
     };
   });
 }
 
 /**
- * Transaction list for the expenses table: resolved split amounts per person,
- * and when a person filter is active, only rows that person has a share of.
+ * Transaction list for the expenses table: resolved per-person amounts, and
+ * when a person filter is active, only rows that person has a share of.
  */
 export async function getTransactionList(filters: DashboardFilters = {}) {
   const person = filters.person ?? "COMBINED";
-  const transactions = await getTransactionsWithDetails(filters);
+  const [transactions, people] = await Promise.all([
+    getTransactionsWithDetails(filters),
+    getActivePeople(),
+  ]);
 
-  return mapTransactionAmounts(transactions, person)
-    .filter((transaction) => matchesPersonFilter(person, transaction.split))
+  const activePersonIds = people.map((entry) => entry.id);
+
+  return mapTransactionAmounts(transactions, activePersonIds, person)
+    .filter((transaction) => matchesPersonFilter(person, transaction.amounts))
     .map((transaction) => ({
       id: transaction.id,
       date: transaction.date,
       description: transaction.description,
       notes: transaction.notes,
       amount: transaction.amount,
-      owner: transaction.owner,
-      matthewSplitPercent: transaction.matthewSplitPercent,
-      genevieveSplitPercent: transaction.genevieveSplitPercent,
       isManual: transaction.isManual,
+      hasOverride: transaction.hasOverride,
       account: transaction.account
         ? { id: transaction.account.id, name: transaction.account.name }
         : null,
@@ -152,23 +180,28 @@ export async function getTransactionList(filters: DashboardFilters = {}) {
         ? { id: transaction.category.id, name: transaction.category.name }
         : null,
       tags: transaction.tags.map((link) => link.tag.name),
-      split: transaction.split,
+      splits: transaction.splits,
+      amounts: transaction.amounts,
       filteredAmount: transaction.filteredAmount,
     }));
 }
 
 export async function getSpendingDashboard(filters: DashboardFilters = {}) {
   const person = filters.person ?? "COMBINED";
-  const transactions = await getTransactionsWithDetails(filters);
-  const mapped = mapTransactionAmounts(transactions, person);
+  const [transactions, people] = await Promise.all([
+    getTransactionsWithDetails(filters),
+    getActivePeople(),
+  ]);
+
+  const activePersonIds = people.map((entry) => entry.id);
+  const mapped = mapTransactionAmounts(transactions, activePersonIds, person);
 
   const monthlyMap = new Map<string, number>();
   const categoryMap = new Map<string, number>();
   const accountMap = new Map<string, number>();
-  const personMap = new Map<string, number>([
-    ["Matthew", 0],
-    ["Genevieve", 0],
-  ]);
+  const personTotals = new Map<string, number>(
+    people.map((entry) => [entry.id, 0]),
+  );
 
   for (const transaction of mapped) {
     const monthKey = `${transaction.date.getUTCFullYear()}-${String(transaction.date.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -189,14 +222,9 @@ export async function getSpendingDashboard(filters: DashboardFilters = {}) {
       (accountMap.get(accountName) ?? 0) + transaction.filteredAmount,
     );
 
-    personMap.set(
-      "Matthew",
-      (personMap.get("Matthew") ?? 0) + transaction.split.matthew,
-    );
-    personMap.set(
-      "Genevieve",
-      (personMap.get("Genevieve") ?? 0) + transaction.split.genevieve,
-    );
+    for (const [personId, personAmount] of Object.entries(transaction.amounts)) {
+      personTotals.set(personId, (personTotals.get(personId) ?? 0) + personAmount);
+    }
   }
 
   const monthlySpending = Array.from(monthlyMap.entries())
@@ -209,6 +237,8 @@ export async function getSpendingDashboard(filters: DashboardFilters = {}) {
     yoyMap.set(year, (yoyMap.get(year) ?? 0) + item.total);
   }
 
+  const personNames = new Map(people.map((entry) => [entry.id, entry.name]));
+
   return {
     totalSpending: mapped.reduce((sum, tx) => sum + tx.filteredAmount, 0),
     monthlySpending,
@@ -218,10 +248,12 @@ export async function getSpendingDashboard(filters: DashboardFilters = {}) {
     spendingByAccount: Array.from(accountMap.entries())
       .map(([name, total]) => ({ name, total }))
       .sort((a, b) => b.total - a.total),
-    spendingByPerson: Array.from(personMap.entries()).map(([name, total]) => ({
-      name,
-      total,
-    })),
+    spendingByPerson: Array.from(personTotals.entries())
+      .map(([personId, total]) => ({
+        name: personNames.get(personId) ?? "Unknown",
+        total,
+      }))
+      .filter((entry) => entry.total !== 0),
     yearOverYear: Array.from(yoyMap.entries())
       .sort(([a], [b]) => a - b)
       .map(([year, total]) => ({ year: String(year), total })),
@@ -238,27 +270,26 @@ export async function getIncomeDashboard(filters: DashboardFilters = {}) {
   }
 
   if (filters.person && filters.person !== "COMBINED") {
-    where.owner = filters.person;
+    where.personId = filters.person;
   }
 
   const [income, spending] = await Promise.all([
-    db.income.findMany({ where, orderBy: { date: "desc" } }),
+    db.income.findMany({
+      where,
+      include: { person: true },
+      orderBy: { date: "desc" },
+    }),
     getSpendingDashboard(filters),
   ]);
 
   const monthlyMap = new Map<string, number>();
-  const personMap = new Map<string, number>([
-    ["Matthew", 0],
-    ["Genevieve", 0],
-  ]);
+  const personMap = new Map<string, number>();
 
   for (const entry of income) {
     const amount = Number(entry.amount);
     const monthKey = `${entry.date.getUTCFullYear()}-${String(entry.date.getUTCMonth() + 1).padStart(2, "0")}`;
     monthlyMap.set(monthKey, (monthlyMap.get(monthKey) ?? 0) + amount);
-
-    const label = entry.owner === "MATTHEW" ? "Matthew" : "Genevieve";
-    personMap.set(label, (personMap.get(label) ?? 0) + amount);
+    personMap.set(entry.person.name, (personMap.get(entry.person.name) ?? 0) + amount);
   }
 
   const monthlyIncome = Array.from(monthlyMap.entries())
@@ -422,11 +453,4 @@ export async function upsertTags(tagNames: string[]) {
     tags.push(tag);
   }
   return tags;
-}
-
-export function parseOwner(value: string): Owner {
-  if (value === "MATTHEW" || value === "GENEVIEVE" || value === "SHARED") {
-    return value;
-  }
-  throw new Error("Invalid owner");
 }

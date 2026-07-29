@@ -21,8 +21,9 @@ services:
     restart: "no"
     environment:
       DATABASE_URL: postgresql://finance:${POSTGRES_PASSWORD:-finance}@db:5432/finance
-      MATTHEW_PASSWORD: ${MATTHEW_PASSWORD:-changeme}
-      GENEVIEVE_PASSWORD: ${GENEVIEVE_PASSWORD:-changeme}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
+      ADMIN_NAME: ${ADMIN_NAME:-Household}
     depends_on:
       db:
         condition: service_healthy

@@ -36,12 +36,14 @@ import {
   filtersToQuery,
 } from "@/components/filters/dashboard-filters";
 import {
-  formatCurrencyPrecise,
-  OWNER_LABELS,
-  toDateInputValue,
-} from "@/lib/utils";
-
-type Owner = "MATTHEW" | "GENEVIEVE" | "SHARED";
+  describeSplitRows,
+  evenSplit,
+  SplitEditor,
+  splitTotal,
+  type Person,
+  type SplitRow,
+} from "@/components/people/split-editor";
+import { formatCurrencyPrecise, toDateInputValue } from "@/lib/utils";
 
 type Transaction = {
   id: string;
@@ -49,53 +51,53 @@ type Transaction = {
   description: string;
   notes: string | null;
   amount: number;
-  owner: Owner;
-  matthewSplitPercent: number | null;
-  genevieveSplitPercent: number | null;
   isManual: boolean;
+  hasOverride: boolean;
   account: { id: string; name: string } | null;
   category: { id: string; name: string } | null;
   tags: string[];
-  split: { matthew: number; genevieve: number };
+  splits: SplitRow[];
+  amounts: Record<string, number>;
 };
 
 type Option = { id: string; name: string };
 
-const emptyForm = {
+const blankForm = {
   date: toDateInputValue(new Date()),
   amount: "",
   description: "",
   notes: "",
-  owner: "SHARED" as Owner,
   categoryId: "",
   accountId: "",
   tags: "",
   overrideSplit: false,
-  matthewSplitPercent: "50",
 };
 
 type EditState = {
   id: string;
   description: string;
   notes: string;
-  owner: Owner;
   categoryId: string;
   tags: string;
   overrideSplit: boolean;
-  matthewSplitPercent: string;
+  splits: SplitRow[];
 };
 
 export default function ExpensesPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Option[]>([]);
   const [accounts, setAccounts] = useState<Option[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
   const [filters, setFilters] = useState<FilterState>(emptyFilters);
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState(blankForm);
+  const [formSplits, setFormSplits] = useState<SplitRow[]>([]);
   const [editing, setEditing] = useState<EditState | null>(null);
   const [message, setMessage] = useState<{ tone: "error" | "ok"; text: string } | null>(
     null,
   );
   const [saving, setSaving] = useState(false);
+
+  const activePeople = people.filter((person) => person.isActive);
 
   const loadTransactions = useCallback(async () => {
     const response = await fetch(`/api/transactions?${filtersToQuery(filters)}`);
@@ -107,17 +109,20 @@ export default function ExpensesPage() {
   }, [filters]);
 
   useEffect(() => {
-    Promise.all([
-      fetch("/api/categories").then((response) => response.json()),
-      fetch("/api/accounts").then((response) => response.json()),
-    ])
-      .then(([categoryData, accountData]) => {
-        setCategories(categoryData);
-        setAccounts(accountData);
-      })
-      .catch(() =>
-        setMessage({ tone: "error", text: "Could not load categories or accounts." }),
+    async function run() {
+      const [categoryData, accountData, peopleData] = await Promise.all([
+        fetch("/api/categories").then((response) => response.json()),
+        fetch("/api/accounts").then((response) => response.json()),
+        fetch("/api/people").then((response) => response.json()),
+      ]);
+      setCategories(categoryData);
+      setAccounts(accountData);
+      setPeople(peopleData);
+      setFormSplits(
+        evenSplit(peopleData.filter((person: Person) => person.isActive)),
       );
+    }
+    run();
   }, []);
 
   useEffect(() => {
@@ -134,23 +139,19 @@ export default function ExpensesPage() {
       .filter(Boolean);
   }
 
-  function splitFields(overrideSplit: boolean, matthewPercent: string) {
-    if (!overrideSplit) {
-      return { matthewSplitPercent: null, genevieveSplitPercent: null };
-    }
-    const matthew = Math.min(Math.max(Number(matthewPercent) || 0, 0), 100);
-    return {
-      matthewSplitPercent: matthew,
-      genevieveSplitPercent: 100 - matthew,
-    };
-  }
-
   async function handleCreate(event: React.FormEvent) {
     event.preventDefault();
+
+    // Without an account there is no default to inherit, so a split is required.
+    const needsSplit = form.overrideSplit || !form.accountId;
+    if (needsSplit && splitTotal(formSplits) !== 100) {
+      setMessage({ tone: "error", text: "Shares must add up to 100%." });
+      return;
+    }
+
     setSaving(true);
     setMessage(null);
 
-    const split = splitFields(form.overrideSplit, form.matthewSplitPercent);
     const response = await fetch("/api/transactions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -159,12 +160,10 @@ export default function ExpensesPage() {
         amount: Number(form.amount),
         description: form.description,
         notes: form.notes || undefined,
-        owner: form.owner,
         categoryId: form.categoryId || undefined,
         accountId: form.accountId || undefined,
         tags: parseTags(form.tags),
-        matthewSplitPercent: split.matthewSplitPercent ?? undefined,
-        genevieveSplitPercent: split.genevieveSplitPercent ?? undefined,
+        splits: needsSplit ? formSplits.filter((split) => split.percent > 0) : [],
       }),
     });
 
@@ -172,7 +171,8 @@ export default function ExpensesPage() {
       const data = await response.json().catch(() => ({}));
       setMessage({ tone: "error", text: data.error ?? "Could not save expense." });
     } else {
-      setForm({ ...emptyForm, date: form.date });
+      setForm({ ...blankForm, date: form.date });
+      setFormSplits(evenSplit(activePeople));
       setMessage({ tone: "ok", text: "Expense added." });
       await loadTransactions();
     }
@@ -182,21 +182,26 @@ export default function ExpensesPage() {
 
   async function handleSaveEdit() {
     if (!editing) return;
+
+    if (editing.overrideSplit && splitTotal(editing.splits) !== 100) {
+      setMessage({ tone: "error", text: "Shares must add up to 100%." });
+      return;
+    }
+
     setSaving(true);
     setMessage(null);
 
-    const split = splitFields(editing.overrideSplit, editing.matthewSplitPercent);
     const response = await fetch(`/api/transactions/${editing.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         description: editing.description,
         notes: editing.notes,
-        owner: editing.owner,
         categoryId: editing.categoryId || null,
         tags: parseTags(editing.tags),
-        matthewSplitPercent: split.matthewSplitPercent,
-        genevieveSplitPercent: split.genevieveSplitPercent,
+        splits: editing.overrideSplit
+          ? editing.splits.filter((split) => split.percent > 0)
+          : [],
       }),
     });
 
@@ -232,7 +237,6 @@ export default function ExpensesPage() {
   }
 
   const total = transactions.reduce((sum, transaction) => sum + transaction.amount, 0);
-  const sharedSelected = form.owner === "SHARED";
 
   return (
     <div className="space-y-6">
@@ -254,6 +258,16 @@ export default function ExpensesPage() {
         >
           {message.text}
         </p>
+      ) : null}
+
+      {activePeople.length === 0 ? (
+        <Card>
+          <CardContent className="p-5 text-sm">
+            No people yet. Add them under{" "}
+            <span className="font-medium">Settings → People</span> so expenses can be
+            split.
+          </CardContent>
+        </Card>
       ) : null}
 
       <Card>
@@ -291,22 +305,6 @@ export default function ExpensesPage() {
                 }
                 required
               />
-            </div>
-            <div className="space-y-2">
-              <Label>Owner</Label>
-              <Select
-                value={form.owner}
-                onValueChange={(value) =>
-                  setForm({ ...form, owner: value as Owner })
-                }
-              >
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="MATTHEW">Matthew</SelectItem>
-                  <SelectItem value="GENEVIEVE">Genevieve</SelectItem>
-                  <SelectItem value="SHARED">Shared</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
             <div className="space-y-2">
               <Label>Account</Label>
@@ -348,7 +346,7 @@ export default function ExpensesPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2 md:col-span-2">
               <Label>Tags</Label>
               <Input
                 placeholder="Vacation, Medical"
@@ -357,40 +355,33 @@ export default function ExpensesPage() {
               />
             </div>
 
-            <div className="space-y-2 md:col-span-2">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={form.overrideSplit}
-                  onChange={(event) =>
-                    setForm({ ...form, overrideSplit: event.target.checked })
-                  }
-                />
-                Override split percentage
-                {!sharedSelected && form.overrideSplit ? (
-                  <span className="text-xs text-muted-foreground">
-                    (an override applies regardless of owner)
-                  </span>
-                ) : null}
-              </label>
-              {form.overrideSplit ? (
-                <div className="flex flex-wrap items-center gap-3">
-                  <Input
-                    type="number"
-                    min="0"
-                    max="100"
-                    className="max-w-[140px]"
-                    value={form.matthewSplitPercent}
+            <div className="space-y-3 md:col-span-2">
+              {form.accountId ? (
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={form.overrideSplit}
                     onChange={(event) =>
-                      setForm({ ...form, matthewSplitPercent: event.target.value })
+                      setForm({ ...form, overrideSplit: event.target.checked })
                     }
                   />
-                  <span className="text-sm text-muted-foreground">
-                    % Matthew / {100 - (Number(form.matthewSplitPercent) || 0)} %
-                    Genevieve
-                  </span>
-                </div>
-              ) : null}
+                  Override the account&apos;s default split
+                </label>
+              ) : (
+                <p className="text-sm font-medium">Split</p>
+              )}
+
+              {form.overrideSplit || !form.accountId ? (
+                <SplitEditor
+                  people={activePeople}
+                  splits={formSplits}
+                  onChange={setFormSplits}
+                />
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Using the account&apos;s default split.
+                </p>
+              )}
             </div>
 
             <div className="space-y-2 md:col-span-2">
@@ -401,7 +392,7 @@ export default function ExpensesPage() {
               />
             </div>
             <div className="md:col-span-2">
-              <Button type="submit" disabled={saving}>
+              <Button type="submit" disabled={saving || activePeople.length === 0}>
                 Add Expense
               </Button>
             </div>
@@ -414,6 +405,7 @@ export default function ExpensesPage() {
         onChange={setFilters}
         categories={categories}
         accounts={accounts}
+        people={activePeople}
         showSearch
       />
 
@@ -431,10 +423,13 @@ export default function ExpensesPage() {
                 <TableHead>Description</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Account</TableHead>
-                <TableHead>Owner</TableHead>
+                <TableHead>Split</TableHead>
                 <TableHead>Tags</TableHead>
-                <TableHead className="text-right">Matthew</TableHead>
-                <TableHead className="text-right">Genevieve</TableHead>
+                {activePeople.map((person) => (
+                  <TableHead key={person.id} className="text-right">
+                    {person.name}
+                  </TableHead>
+                ))}
                 <TableHead className="text-right">Amount</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -455,7 +450,14 @@ export default function ExpensesPage() {
                   </TableCell>
                   <TableCell>{transaction.category?.name ?? "—"}</TableCell>
                   <TableCell>{transaction.account?.name ?? "Manual"}</TableCell>
-                  <TableCell>{OWNER_LABELS[transaction.owner]}</TableCell>
+                  <TableCell>
+                    {describeSplitRows(transaction.splits, people)}
+                    {transaction.hasOverride ? (
+                      <Badge variant="outline" className="ml-2">
+                        override
+                      </Badge>
+                    ) : null}
+                  </TableCell>
                   <TableCell>
                     <span className="flex flex-wrap gap-1">
                       {transaction.tags.map((tag) => (
@@ -465,12 +467,14 @@ export default function ExpensesPage() {
                       ))}
                     </span>
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatCurrencyPrecise(transaction.split.matthew)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatCurrencyPrecise(transaction.split.genevieve)}
-                  </TableCell>
+                  {activePeople.map((person) => (
+                    <TableCell
+                      key={person.id}
+                      className="text-right tabular-nums"
+                    >
+                      {formatCurrencyPrecise(transaction.amounts[person.id] ?? 0)}
+                    </TableCell>
+                  ))}
                   <TableCell className="text-right font-medium tabular-nums">
                     {formatCurrencyPrecise(transaction.amount)}
                   </TableCell>
@@ -485,13 +489,13 @@ export default function ExpensesPage() {
                             id: transaction.id,
                             description: transaction.description,
                             notes: transaction.notes ?? "",
-                            owner: transaction.owner,
                             categoryId: transaction.category?.id ?? "",
                             tags: transaction.tags.join(", "),
-                            overrideSplit: transaction.matthewSplitPercent != null,
-                            matthewSplitPercent: String(
-                              transaction.matthewSplitPercent ?? 50,
-                            ),
+                            overrideSplit: transaction.hasOverride,
+                            splits:
+                              transaction.splits.length > 0
+                                ? transaction.splits
+                                : evenSplit(activePeople),
                           })
                         }
                       >
@@ -511,7 +515,10 @@ export default function ExpensesPage() {
               ))}
               {transactions.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-muted-foreground">
+                  <TableCell
+                    colSpan={9 + activePeople.length}
+                    className="text-muted-foreground"
+                  >
                     No transactions match these filters.
                   </TableCell>
                 </TableRow>
@@ -563,22 +570,6 @@ export default function ExpensesPage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Owner</Label>
-                <Select
-                  value={editing.owner}
-                  onValueChange={(value) =>
-                    setEditing({ ...editing, owner: value as Owner })
-                  }
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="MATTHEW">Matthew</SelectItem>
-                    <SelectItem value="GENEVIEVE">Genevieve</SelectItem>
-                    <SelectItem value="SHARED">Shared</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
                 <Label>Tags</Label>
                 <Input
                   placeholder="Vacation, Medical"
@@ -588,7 +579,7 @@ export default function ExpensesPage() {
                   }
                 />
               </div>
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
@@ -597,28 +588,15 @@ export default function ExpensesPage() {
                       setEditing({ ...editing, overrideSplit: event.target.checked })
                     }
                   />
-                  Override split percentage
+                  Override the split
                 </label>
                 {editing.overrideSplit ? (
-                  <div className="flex flex-wrap items-center gap-3">
-                    <Input
-                      type="number"
-                      min="0"
-                      max="100"
-                      className="max-w-[140px]"
-                      value={editing.matthewSplitPercent}
-                      onChange={(event) =>
-                        setEditing({
-                          ...editing,
-                          matthewSplitPercent: event.target.value,
-                        })
-                      }
-                    />
-                    <span className="text-sm text-muted-foreground">
-                      % Matthew /{" "}
-                      {100 - (Number(editing.matthewSplitPercent) || 0)} % Genevieve
-                    </span>
-                  </div>
+                  <SplitEditor
+                    people={activePeople}
+                    splits={editing.splits}
+                    onChange={(splits) => setEditing({ ...editing, splits })}
+                    compact
+                  />
                 ) : (
                   <p className="text-xs text-muted-foreground">
                     Using the account&apos;s default split.

@@ -100,12 +100,6 @@ export const LIABILITY_LABELS: Record<string, string> = {
   CAR_LOAN: "Car Loan",
 };
 
-export const OWNER_LABELS: Record<string, string> = {
-  MATTHEW: "Matthew",
-  GENEVIEVE: "Genevieve",
-  SHARED: "Shared",
-};
-
 export const INVESTMENT_ASSETS = [
   "BROKERAGE",
   "FOUR_O_ONE_K",

@@ -30,7 +30,13 @@
       "Bash(curl -s -o /dev/null -w \"login status=%{http_code}\\\\n\" http://localhost:3118/login)",
       "Bash(env -u DATABASE_URL npm run build)",
       "Bash(node -e ' *)",
-      "Bash(env -u DATABASE_URL npx next build)"
+      "Bash(env -u DATABASE_URL npx next build)",
+      "Bash(rm -rf prisma/migrations/20260726000000_init && mkdir -p prisma/migrations/20260727000000_init && npx prisma migrate diff --from-empty --to-schema prisma/schema.prisma --script > prisma/migrations/20260727000000_init/migration.sql 2>/tmp/md.err; echo \"exit=$?\"; grep -c \"CREATE TABLE\" prisma/migrations/20260727000000_init/migration.sql; grep \"CREATE TABLE\" prisma/migrations/20260727000000_init/migration.sql; npx prisma generate 2>&1 | tail -2)",
+      "Bash(python3 -)",
+      "Bash(export DATABASE_URL=\"postgresql://finance:finance@localhost:55432/finance\")",
+      "Bash(ADMIN_USERNAME=malone ADMIN_PASSWORD=preview123 ADMIN_NAME=\"Malone Household\" npx tsx prisma/seed.ts)",
+      "Bash(cp -r .next/static .next/standalone/.next/static)",
+      "Bash(cp -r public .next/standalone/public)"
     ]
   }
 }

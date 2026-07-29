@@ -17,7 +17,6 @@ const balanceSchema = z.object({
     .optional(),
   liabilityType: z.enum(["MORTGAGE", "CAR_LOAN"]).optional(),
   amount: z.number(),
-  owner: z.enum(["MATTHEW", "GENEVIEVE", "SHARED"]).default("SHARED"),
 });
 
 const snapshotSchema = z.object({

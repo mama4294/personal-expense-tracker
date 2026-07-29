@@ -21,7 +21,7 @@ export default async function LoginPage({
 
     try {
       await signIn("credentials", {
-        email: String(formData.get("email")),
+        username: String(formData.get("username")),
         password: String(formData.get("password")),
         redirectTo: "/",
       });
@@ -40,27 +40,37 @@ export default async function LoginPage({
         <CardHeader>
           <CardTitle>Sign in</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Personal finance dashboard for Matthew and Genevieve.
+            Sign in to your household finance dashboard.
           </p>
         </CardHeader>
         <CardContent>
           <form action={loginAction} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="username">Username</Label>
               <Input
-                id="email"
-                name="email"
-                type="email"
-                placeholder="matthew@finance.local"
+                id="username"
+                name="username"
+                type="text"
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
                 required
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
-              <Input id="password" name="password" type="password" required />
+              <Input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                required
+              />
             </div>
             {params.error ? (
-              <p className="text-sm text-destructive">Invalid email or password.</p>
+              <p className="text-sm text-destructive">
+                Invalid username or password.
+              </p>
             ) : null}
             <Button type="submit" className="w-full">
               Sign in

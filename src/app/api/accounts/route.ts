@@ -1,19 +1,29 @@
 import { requireAuth, jsonOk, jsonError, jsonDbError } from "@/lib/api";
 import { db } from "@/lib/db";
+import { validateSplits } from "@/lib/splits";
 import { z } from "zod";
 
 const accountSchema = z.object({
   name: z.string().min(1),
-  owner: z.enum(["MATTHEW", "GENEVIEVE", "SHARED"]),
-  matthewSplitPercent: z.number().int().min(0).max(100).optional(),
-  genevieveSplitPercent: z.number().int().min(0).max(100).optional(),
+  splits: z
+    .array(
+      z.object({
+        personId: z.string().min(1),
+        percent: z.number().int().min(0).max(100),
+      }),
+    )
+    .default([]),
 });
 
 export async function GET() {
   const { error } = await requireAuth();
   if (error) return error;
 
-  const accounts = await db.account.findMany({ orderBy: { name: "asc" } });
+  const accounts = await db.account.findMany({
+    include: { splits: true },
+    orderBy: { name: "asc" },
+  });
+
   return jsonOk(accounts);
 }
 
@@ -26,17 +36,18 @@ export async function POST(request: Request) {
     return jsonError(parsed.error.issues[0]?.message ?? "Invalid account");
   }
 
-  const matthew = parsed.data.matthewSplitPercent ?? (parsed.data.owner === "MATTHEW" ? 100 : parsed.data.owner === "GENEVIEVE" ? 0 : 50);
-  const genevieve = parsed.data.genevieveSplitPercent ?? 100 - matthew;
+  // Drop zero shares so an account owned outright records one row, not several.
+  const splits = parsed.data.splits.filter((split) => split.percent > 0);
+  const invalid = validateSplits(splits);
+  if (invalid) return jsonError(invalid);
 
   try {
     const account = await db.account.create({
       data: {
-        name: parsed.data.name,
-        owner: parsed.data.owner,
-        matthewSplitPercent: matthew,
-        genevieveSplitPercent: genevieve,
+        name: parsed.data.name.trim(),
+        splits: { create: splits },
       },
+      include: { splits: true },
     });
 
     return jsonOk(account, 201);

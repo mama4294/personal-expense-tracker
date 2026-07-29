@@ -1,11 +1,13 @@
 # Personal Finance Dashboard
 
-Self-hosted personal finance tracking for Matthew and Genevieve.
+Self-hosted household finance tracking: shared-expense splitting, CSV import,
+net worth history, and financial-independence progress.
 
 ## Features
 
 - CSV import (multi-file upload or paste) with duplicate detection
-- Account ownership and configurable shared-expense splits
+- Any number of people, with configurable split percentages per account
+- Username logins, managed in Settings, separate from the people being split
 - Manual expenses, editable transactions, tags, and notes
 - Search and filter by date, card, person, category, tag, and amount range
 - Manual income entry with monthly and annual trends
@@ -50,21 +52,27 @@ npm run db:seed
 npm run dev
 ```
 
-5. Sign in with the seeded users:
+5. Sign in with the seeded login — username `ADMIN_USERNAME`, password
+`ADMIN_PASSWORD` (defaults `admin` / `changeme`).
 
-- `matthew@finance.local`
-- `genevieve@finance.local`
+Then set the app up for your household:
 
-Their initial passwords come from `MATTHEW_PASSWORD` and `GENEVIEVE_PASSWORD`.
-Change them under Settings → Profile; re-seeding does not overwrite a changed
-password.
+1. **Settings → People** — add everyone expenses are split between. People carry
+   split percentages and never sign in.
+2. **Settings → Accounts** — add each card or bank account, naming it exactly as
+   it appears in your CSV exports, and set its default split.
+3. **Settings → Logins** — add more logins if others need access. Every login
+   sees all of the household's data.
+4. **Settings → Profile** — change the seeded password. Re-seeding never
+   overwrites a password changed in the app.
 
 ## Production (Docker Compose)
 
 Images are built by GitHub Actions on every push to `main` and published to
 GHCR as `ghcr.io/mama4294/personal-expense-tracker/app` and `.../migrate`, so
 the server only pulls — it never builds. Set `AUTH_SECRET`, `AUTH_URL`,
-`POSTGRES_PASSWORD`, and the two initial user passwords in `.env`, then:
+`POSTGRES_PASSWORD`, and the initial `ADMIN_USERNAME` / `ADMIN_PASSWORD` in
+`.env`, then:
 
 ```bash
 docker compose up -d
@@ -84,8 +92,9 @@ The stack runs three services:
 
 - `db` — PostgreSQL with a named volume for persistence. No host port is
   published; add a `ports` entry if you want to reach it from your LAN.
-- `migrate` — one-shot container that runs `prisma migrate deploy` and seeds
-  users, default categories, and default accounts, then exits.
+- `migrate` — one-shot container that runs `prisma migrate deploy` and seeds the
+  first login plus the default categories, then exits. People and accounts are
+  not seeded; you create those in Settings.
 - `app` — the Next.js standalone server on port 3000, started only after
   `migrate` completes successfully.
 
@@ -113,7 +122,8 @@ Schema changes apply on rebuild: `docker compose up -d --build` reruns the
 | 2026-07-01 | Credit Card - 9939 | Costco | Groceries | | 148.22 |
 
 - `Account` is matched by exact name against the accounts in Settings. Unmatched
-  names are flagged in the preview and import as shared with no card attached.
+  names are flagged in the preview and import with no account attached, which
+  means they fall back to an even split across active people.
 - `Category` is matched case-insensitively; unknown categories are created.
 - `Tags` is a comma-separated list.
 - `Amount` is read as a magnitude, so both positive and negative export
@@ -121,6 +131,21 @@ Schema changes apply on rebuild: `docker compose up -d --build` reruns the
   spending — adjust those rows after import.
 - Duplicate detection compares date, account, description, and amount, both
   against existing transactions and within the uploaded batch.
+
+## People, splits, and logins
+
+Three separate ideas, deliberately:
+
+- **People** are who expenses are split between. They have no password. Adding,
+  renaming, or deactivating them is a Settings change, not a schema change.
+- **Splits** are percentages that must total 100. An account carries a default
+  split; a transaction can override it. Imported rows store no split of their
+  own, so changing an account's split re-attributes its whole history.
+- **Logins** are usernames and passwords. One login can cover a whole household,
+  and every login sees all data — there is no per-login privacy boundary.
+
+Expenses with no account (cash, Venmo, a check) have no default to inherit, so
+they need an explicit split; the form pre-fills an even one.
 
 ## FI Calculations
 

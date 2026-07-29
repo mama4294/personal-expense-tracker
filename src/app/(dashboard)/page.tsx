@@ -39,14 +39,17 @@ export default function SpendingDashboardPage() {
   const [data, setData] = useState<SpendingData | null>(null);
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
   const [accounts, setAccounts] = useState<{ id: string; name: string }[]>([]);
+  const [people, setPeople] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
     Promise.all([
       fetch("/api/categories").then((response) => response.json()),
       fetch("/api/accounts").then((response) => response.json()),
-    ]).then(([categoryData, accountData]) => {
+      fetch("/api/people").then((response) => response.json()),
+    ]).then(([categoryData, accountData, peopleData]) => {
       setCategories(categoryData);
       setAccounts(accountData);
+      setPeople(peopleData);
     });
   }, []);
 
@@ -70,6 +73,7 @@ export default function SpendingDashboardPage() {
         onChange={setFilters}
         categories={categories}
         accounts={accounts}
+        people={people}
       />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">

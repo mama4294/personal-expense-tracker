@@ -1,4 +1,4 @@
-import { requireAuth, jsonOk, jsonError } from "@/lib/api";
+import { requireAuth, jsonOk, jsonError, jsonDbError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { z } from "zod";
 
@@ -7,7 +7,7 @@ const incomeSchema = z.object({
   source: z.string().min(1).optional(),
   description: z.string().optional(),
   amount: z.number().positive().optional(),
-  owner: z.enum(["MATTHEW", "GENEVIEVE"]).optional(),
+  personId: z.string().min(1).optional(),
 });
 
 export async function PATCH(
@@ -23,15 +23,22 @@ export async function PATCH(
     return jsonError(parsed.error.issues[0]?.message ?? "Invalid income update");
   }
 
-  const data = {
-    ...parsed.data,
-    date: parsed.data.date
-      ? new Date(`${parsed.data.date}T00:00:00.000Z`)
-      : undefined,
-  };
+  try {
+    const entry = await db.income.update({
+      where: { id },
+      data: {
+        ...parsed.data,
+        date: parsed.data.date
+          ? new Date(`${parsed.data.date}T00:00:00.000Z`)
+          : undefined,
+      },
+      include: { person: { select: { id: true, name: true } } },
+    });
 
-  const entry = await db.income.update({ where: { id }, data });
-  return jsonOk(entry);
+    return jsonOk(entry);
+  } catch (updateError) {
+    return jsonDbError(updateError, "Could not update the income entry.");
+  }
 }
 
 export async function DELETE(
@@ -42,6 +49,11 @@ export async function DELETE(
   if (error) return error;
 
   const { id } = await params;
-  await db.income.delete({ where: { id } });
-  return jsonOk({ success: true });
+
+  try {
+    await db.income.delete({ where: { id } });
+    return jsonOk({ success: true });
+  } catch (deleteError) {
+    return jsonDbError(deleteError, "Could not delete the income entry.");
+  }
 }
