@@ -6,6 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+// npm run db:deploy && npm run db:seed:demo && npm run build && npm run start
+
 export default async function LoginPage({
   searchParams,
 }: {

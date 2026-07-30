@@ -28,31 +28,56 @@ net worth history, and financial-independence progress.
 
 ## Local Development
 
+No PostgreSQL or Docker installation is required — `embedded-postgres` is a dev
+dependency that downloads a real PostgreSQL binary into `node_modules`.
+
 1. Copy environment variables and set a real `AUTH_SECRET`:
 
 ```bash
 cp .env.example .env
 ```
 
-2. Start PostgreSQL (any local Postgres works; this uses the compose service):
-
-```bash
-docker compose up db -d
-```
-
-3. Install dependencies, apply migrations, and seed:
+2. Install dependencies:
 
 ```bash
 npm install
-npm run db:deploy
-npm run db:seed
 ```
 
-4. Run the development server:
+3. Start the local database. This runs in the **foreground** — leave the terminal
+   open, as the cluster shuts down with the process:
+
+```bash
+npm run db:local
+```
+
+4. In a second terminal, apply migrations and seed demo data:
+
+```bash
+npm run db:deploy && npm run db:seed:demo
+```
+
+5. Run the development server:
 
 ```bash
 npm run dev
 ```
+
+Sign in as **`demo` / `demo1234`** (see [Testing locally with demo
+data](#testing-locally-with-demo-data)).
+
+The cluster lives in `.localdb/` (gitignored) on port 5432, with credentials
+matching the default `DATABASE_URL` in `.env.example`, so nothing else needs
+configuring. Data persists across restarts. To start over:
+
+```bash
+npm run db:local:reset
+```
+
+If port 5432 is already taken, use `LOCAL_DB_PORT=5433 npm run db:local` and
+update `DATABASE_URL` in `.env` to match.
+
+Prefer your own PostgreSQL, or Docker? Point `DATABASE_URL` at it and skip
+`db:local` — `docker compose up db -d` also works.
 
 5. Sign in with the seeded login — username `ADMIN_USERNAME`, password
 `ADMIN_PASSWORD` (defaults `admin` / `changeme`).
@@ -67,6 +92,37 @@ Then set the app up for your household:
    sees all of the household's data.
 4. **Settings → Profile** — change the seeded password. Re-seeding never
    overwrites a password changed in the app.
+
+## Testing locally with demo data
+
+To click through the app without importing anything, seed a demo household:
+
+```bash
+npm run db:seed:demo
+```
+
+Sign in as **`demo` / `demo1234`**. That gives you two people (Alex and Sam),
+four accounts covering every ownership shape (one each, one 50/50, one 60/40),
+twelve months of transactions across ~18 categories, a year of income for both
+people, and twelve monthly net worth snapshots — so every dashboard has
+something to draw.
+
+It also writes `demo-import.csv` in the project root, dated next month, for
+trying the Import CSV flow. One row deliberately names an account that doesn't
+exist so you can see the unknown-account warning in the preview.
+
+To run the production build against it, with `npm run db:local` still going in
+the other terminal:
+
+```bash
+npm run build && npm run start
+```
+
+Override the credentials with `DEMO_USERNAME` and `DEMO_PASSWORD` if you like.
+
+The seed **refuses to run against a database that already has transactions**, so
+it can't be pointed at real data by accident. If you genuinely want to add demo
+data on top of what's there, set `DEMO_FORCE=1`.
 
 ## Production (Docker Compose)
 

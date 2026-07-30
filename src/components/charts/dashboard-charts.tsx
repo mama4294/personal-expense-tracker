@@ -105,6 +105,9 @@ export function SimpleBarChart({
           name={name ?? yKey}
           fill={SERIES_COLORS[0]}
           radius={[4, 4, 0, 0]}
+          // The filters refetch on every change; re-animating from zero each
+          // time reads as flicker, and a throttled tab can freeze it mid-grow.
+          isAnimationActive={false}
           cursor={onSelect ? "pointer" : undefined}
           onClick={
             onSelect
@@ -178,6 +181,7 @@ export function SimpleLineChart({
             stroke={line.color}
             strokeWidth={2}
             dot={false}
+            isAnimationActive={false}
             activeDot={{ r: 4, strokeWidth: 2, stroke: "#ffffff" }}
           />
         ))}
@@ -224,6 +228,7 @@ export function SimplePieChart({
           paddingAngle={2}
           stroke="#ffffff"
           strokeWidth={2}
+          isAnimationActive={false}
           cursor={onSelect ? "pointer" : undefined}
           onClick={
             onSelect

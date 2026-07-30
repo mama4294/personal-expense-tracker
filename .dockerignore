@@ -16,3 +16,6 @@ README.md
 npm-debug.log*
 .DS_Store
 coverage
+
+# local PostgreSQL data directory
+.localdb
