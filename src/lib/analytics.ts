@@ -374,17 +374,28 @@ export async function getIncomeDashboard(filters: DashboardFilters = {}) {
   };
 }
 
-export async function getNetWorthDashboard() {
+/**
+ * Net worth, optionally narrowed to one person's accounts.
+ *
+ * A person sees only the accounts they hold. Jointly held ones (personId null)
+ * belong to no single person, so they're reported separately rather than being
+ * split by a rule the app has no basis for inventing.
+ */
+export async function getNetWorthDashboard(person: PersonFilter = "COMBINED") {
   const snapshots = await db.netWorthSnapshot.findMany({
     include: { balances: true },
     orderBy: { month: "asc" },
   });
 
+  const mine = (balance: { personId: string | null }) =>
+    person === "COMBINED" ? true : balance.personId === person;
+
   const timeline = snapshots.map((snapshot) => {
-    const assets = snapshot.balances
+    const balances = snapshot.balances.filter(mine);
+    const assets = balances
       .filter((balance) => balance.assetType)
       .reduce((sum, balance) => sum + Number(balance.amount), 0);
-    const liabilities = snapshot.balances
+    const liabilities = balances
       .filter((balance) => balance.liabilityType)
       .reduce((sum, balance) => sum + Number(balance.amount), 0);
 
@@ -398,10 +409,15 @@ export async function getNetWorthDashboard() {
 
   const latest = snapshots.at(-1);
   const allocationMap = new Map<string, number>();
+  let jointNetWorth = 0;
 
   if (latest) {
     for (const balance of latest.balances) {
-      if (!balance.assetType) continue;
+      if (balance.personId === null) {
+        jointNetWorth +=
+          balance.assetType ? Number(balance.amount) : -Number(balance.amount);
+      }
+      if (!mine(balance) || !balance.assetType) continue;
       allocationMap.set(
         balance.assetType,
         (allocationMap.get(balance.assetType) ?? 0) + Number(balance.amount),
@@ -416,40 +432,68 @@ export async function getNetWorthDashboard() {
       total,
     })),
     latestNetWorth: timeline.at(-1)?.netWorth ?? 0,
+    /// Held by the household rather than any one person; excluded from a
+    /// person view, so the page can say so instead of quietly losing it.
+    jointNetWorth,
   };
 }
 
-export async function getFiDashboard() {
-  const [settings, excludedCategories, transactionRows, snapshots] =
+/**
+ * FI progress, optionally for one person.
+ *
+ * Their annual spending is their share of each transaction (per the account and
+ * transaction splits), and their investments are the accounts they hold —
+ * jointly held investments are reported separately rather than divided.
+ */
+export async function getFiDashboard(person: PersonFilter = "COMBINED") {
+  const [settings, excludedCategories, transactions, snapshots, people] =
     await Promise.all([
       db.appSettings.findUnique({ where: { id: "default" } }),
       db.category.findMany({ where: { excludedFromFi: true }, select: { id: true } }),
-      db.transaction.findMany({
-        select: { date: true, amount: true, categoryId: true },
-      }),
+      getTransactionsWithDetails({}),
       db.netWorthSnapshot.findMany({
         include: { balances: true },
         orderBy: { month: "asc" },
       }),
+      getActivePeople(),
     ]);
 
   const excludedIds = new Set(excludedCategories.map((category) => category.id));
-  const transactions: FiTransaction[] = transactionRows.map((transaction) => ({
+  const activePersonIds = people.map((entry) => entry.id);
+
+  // filteredAmount is the whole amount for Combined and this person's share
+  // otherwise, so the same code path serves both.
+  const fiTransactions: FiTransaction[] = mapTransactionAmounts(
+    transactions,
+    activePersonIds,
+    person,
+  ).map((transaction) => ({
     date: transaction.date,
-    amount: Number(transaction.amount),
+    amount: transaction.filteredAmount,
     categoryId: transaction.categoryId,
   }));
 
   const withdrawalRate = Number(settings?.withdrawalRate ?? 0.04);
   const annualSpending = trailingTwelveMonthSpending(
-    transactions,
+    fiTransactions,
     excludedIds,
     new Date(),
   );
 
+  const held = (balances: { personId: string | null }[]) =>
+    person === "COMBINED"
+      ? balances
+      : balances.filter((balance) => balance.personId === person);
+
   const latestSnapshot = snapshots.at(-1);
   const currentInvestments = latestSnapshot
-    ? sumInvestments(latestSnapshot.balances)
+    ? sumInvestments(held(latestSnapshot.balances) as typeof latestSnapshot.balances)
+    : 0;
+
+  const jointInvestments = latestSnapshot
+    ? sumInvestments(
+        latestSnapshot.balances.filter((balance) => balance.personId === null),
+      )
     : 0;
 
   const metrics = calculateFiMetrics(
@@ -461,9 +505,11 @@ export async function getFiDashboard() {
   // Each historical point is measured against the spending that was actually
   // trailing that month, not against today's spending.
   const history = snapshots.map((snapshot) => {
-    const investments = sumInvestments(snapshot.balances);
+    const investments = sumInvestments(
+      held(snapshot.balances) as typeof snapshot.balances,
+    );
     const spending = trailingTwelveMonthSpending(
-      transactions,
+      fiTransactions,
       excludedIds,
       snapshot.month,
     );
@@ -482,6 +528,9 @@ export async function getFiDashboard() {
     ...metrics,
     history,
     excludedCategories: excludedCategories.length,
+    /// Investments held by the household rather than any one person. Only
+    /// meaningful when a single person is selected.
+    jointInvestments: person === "COMBINED" ? 0 : jointInvestments,
   };
 }
 

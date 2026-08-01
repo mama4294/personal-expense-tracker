@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Plus } from "lucide-react";
+import { PersonToggle } from "@/components/filters/person-toggle";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -59,6 +60,7 @@ type NetWorthData = {
   timeline: { month: string; netWorth: number; assets: number; liabilities: number }[];
   allocation: { name: string; total: number }[];
   latestNetWorth: number;
+  jointNetWorth: number;
 };
 
 function currentMonth() {
@@ -76,6 +78,7 @@ export default function NetWorthPage() {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [person, setPerson] = useState("COMBINED");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [month, setMonth] = useState(currentMonth);
@@ -94,7 +97,7 @@ export default function NetWorthPage() {
 
   const load = useCallback(async () => {
     const [dashboardResponse, snapshotResponse, peopleResponse] = await Promise.all([
-      fetch("/api/dashboard/net-worth"),
+      fetch(`/api/dashboard/net-worth?person=${person}`),
       fetch("/api/net-worth"),
       fetch("/api/people"),
     ]);
@@ -107,7 +110,7 @@ export default function NetWorthPage() {
     setData(await dashboardResponse.json());
     setSnapshots(await snapshotResponse.json());
     setPeople(await peopleResponse.json());
-  }, []);
+  }, [person]);
 
   useEffect(() => {
     async function run() {
@@ -198,11 +201,27 @@ export default function NetWorthPage() {
             worth over time.
           </p>
         </div>
-        <Button onClick={() => openFor(currentMonth())}>
-          <Plus className="h-4 w-4" />
-          Add Balances
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <PersonToggle
+            people={activePeople}
+            value={person}
+            onChange={setPerson}
+          />
+          <Button onClick={() => openFor(currentMonth())}>
+            <Plus className="h-4 w-4" />
+            Add Balances
+          </Button>
+        </div>
       </div>
+
+      {person !== "COMBINED" && (data?.jointNetWorth ?? 0) !== 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Showing only accounts held by{" "}
+          {activePeople.find((entry) => entry.id === person)?.name}. A further{" "}
+          {formatCurrency(data?.jointNetWorth ?? 0)} is held jointly and appears
+          under Combined.
+        </p>
+      ) : null}
 
       {message ? (
         <p
@@ -292,7 +311,7 @@ export default function NetWorthPage() {
         <CardHeader>
           <CardTitle>Snapshot History ({snapshots.length})</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Select a month to see the accounts behind it.
+            Every account, whoever holds it. Select a month to see the detail.
           </p>
         </CardHeader>
         <CardContent>

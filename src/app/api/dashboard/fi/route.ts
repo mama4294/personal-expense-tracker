@@ -1,9 +1,13 @@
 import { requireAuth, jsonOk } from "@/lib/api";
 import { getFiDashboard } from "@/lib/analytics";
 
-export async function GET() {
+export async function GET(request: Request) {
   const { error } = await requireAuth();
   if (error) return error;
 
-  return jsonOk(await getFiDashboard());
+  const person = new URL(request.url).searchParams.get("person");
+
+  return jsonOk(
+    await getFiDashboard(person && person !== "COMBINED" ? person : "COMBINED"),
+  );
 }

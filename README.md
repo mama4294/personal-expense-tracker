@@ -15,7 +15,8 @@ net worth history, and financial-independence progress.
 - Monthly paycheck detail per company, so one person can hold several jobs
 - Cash Flow page with month-by-month savings and a Sankey of where the money went
 - Monthly net worth snapshots, per-account and per-person, with editable history
-- Spending, income, net worth, and FI dashboards
+- Spending, income, cash flow, net worth, and FI dashboards, each filterable by
+  person or combined
 - Financial independence progress against a configurable withdrawal rate
 - Secure authentication with Auth.js
 
@@ -261,6 +262,21 @@ and Roth balances alongside a shared mortgage and house.
 
 Expenses with no account (cash, Venmo, a check) have no default to inherit, so
 they need an explicit split; the form pre-fills an even one.
+
+## Filtering by person
+
+Spending, Cash Flow, Net Worth, and FI all carry a Combined / per-person toggle,
+but "a person" means something slightly different depending on the data:
+
+- **Spending and cash flow** use the split percentages, so a person sees their
+  *share* of every shared transaction.
+- **Net worth and FI** use account ownership, so a person sees the accounts they
+  hold. Jointly held accounts belong to nobody in particular and are reported
+  separately rather than divided by a rule the app would have to invent — both
+  pages say how much is joint when you filter.
+
+Either way, the parts reconcile: each person's figure plus anything joint adds
+back up to Combined.
 
 ## FI Calculations
 

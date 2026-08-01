@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/table";
 import {
@@ -8,6 +8,7 @@ import {
   SimpleLineChart,
   StatCard,
 } from "@/components/charts/dashboard-charts";
+import { PersonToggle } from "@/components/filters/person-toggle";
 import { formatCurrency, formatMonthLabel, formatPercent } from "@/lib/utils";
 
 type FiData = {
@@ -26,25 +27,56 @@ type FiData = {
     fiNumber: number;
     progress: number;
   }[];
+  jointInvestments: number;
 };
+
+type Person = { id: string; name: string; isActive: boolean };
 
 export default function FiPage() {
   const [data, setData] = useState<FiData | null>(null);
+  const [people, setPeople] = useState<Person[]>([]);
+  const [person, setPerson] = useState("COMBINED");
+
+  const activePeople = people.filter((entry) => entry.isActive);
+
+  const load = useCallback(async () => {
+    const [fiResponse, peopleResponse] = await Promise.all([
+      fetch(`/api/dashboard/fi?person=${person}`),
+      fetch("/api/people"),
+    ]);
+    if (!fiResponse.ok || !peopleResponse.ok) return;
+    setData(await fiResponse.json());
+    setPeople(await peopleResponse.json());
+  }, [person]);
 
   useEffect(() => {
-    fetch("/api/dashboard/fi")
-      .then((response) => response.json())
-      .then(setData);
-  }, []);
+    async function run() {
+      await load();
+    }
+    run();
+  }, [load]);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold">Financial Independence</h2>
-        <p className="text-sm text-muted-foreground">
-          FI number, investment progress, and 4% withdrawal projections.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-semibold">Financial Independence</h2>
+          <p className="text-sm text-muted-foreground">
+            FI number, investment progress, and 4% withdrawal projections.
+          </p>
+        </div>
+        <PersonToggle people={activePeople} value={person} onChange={setPerson} />
       </div>
+
+      {person !== "COMBINED" ? (
+        <p className="text-sm text-muted-foreground">
+          {activePeople.find((entry) => entry.id === person)?.name}&apos;s share of
+          spending, against the investments they hold.
+          {(data?.jointInvestments ?? 0) > 0
+            ? ` A further ${formatCurrency(data?.jointInvestments ?? 0)} of investments is held jointly and counts only under Combined.`
+            : ""}
+        </p>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard
