@@ -12,8 +12,9 @@ net worth history, and financial-independence progress.
 - Username logins, managed in Settings, separate from the people being split
 - Manual expenses, editable transactions, tags, and notes
 - Search and filter by date, card, person, category, tag, and amount range
-- Manual income entry with monthly and annual trends
-- Monthly net worth snapshots with editable history
+- Monthly paycheck detail per company, so one person can hold several jobs
+- Cash Flow page with month-by-month savings and a Sankey of where the money went
+- Monthly net worth snapshots, per-account and per-person, with editable history
 - Spending, income, net worth, and FI dashboards
 - Financial independence progress against a configurable withdrawal rate
 - Secure authentication with Auth.js
@@ -78,20 +79,6 @@ update `DATABASE_URL` in `.env` to match.
 
 Prefer your own PostgreSQL, or Docker? Point `DATABASE_URL` at it and skip
 `db:local` — `docker compose up db -d` also works.
-
-5. Sign in with the seeded login — username `ADMIN_USERNAME`, password
-`ADMIN_PASSWORD` (defaults `admin` / `changeme`).
-
-Then set the app up for your household:
-
-1. **Settings → People** — add everyone expenses are split between. People carry
-   split percentages and never sign in.
-2. **Settings → Accounts** — add each card or bank account, naming it exactly as
-   it appears in your CSV exports, and set its default split.
-3. **Settings → Logins** — add more logins if others need access. Every login
-   sees all of the household's data.
-4. **Settings → Profile** — change the seeded password. Re-seeding never
-   overwrites a password changed in the app.
 
 ## Testing locally with demo data
 
@@ -163,6 +150,23 @@ known secret. Put the app behind your reverse proxy for HTTPS —
 Schema changes apply on rebuild: `docker compose up -d --build` reruns the
 `migrate` service against the existing volume.
 
+## First run
+
+Sign in with the seeded login — username `ADMIN_USERNAME`, password
+`ADMIN_PASSWORD` (defaults `admin` / `changeme`), then:
+
+1. **Settings → People** — add everyone expenses are split between. People carry
+   split percentages and never sign in.
+2. **Settings → Accounts** — add each card or bank account, naming it exactly as
+   it appears in your CSV exports, and set its default split.
+3. **Settings → People → Companies** — add where each person works. Paychecks
+   are recorded against a company; leaving a job means marking it *past*, which
+   keeps the pay history and hides it from new paychecks.
+4. **Settings → Logins** — add more logins if others need access. Every login
+   sees all of the household's data.
+5. **Settings → Profile** — change the seeded password. Re-seeding never
+   overwrites a password changed in the app.
+
 ## Monthly Workflow
 
 1. Download credit card CSV exports
@@ -170,9 +174,39 @@ Schema changes apply on rebuild: `docker compose up -d --build` reruns the
    is fine)
 3. Review the preview — new versus duplicate rows, unknown accounts
 4. Confirm the import
-5. Enter the month's income on the Income page
-6. Enter the month's balances on the Net Worth page
+5. Enter the month's paycheck with **Add Paycheck** on the Income page
+6. Enter the month's balances with **Add Balances** on the Net Worth page
 7. Review the dashboards and FI progress
+
+## Income and Cash Flow
+
+Income is recorded two ways, and they must not overlap:
+
+- **Paychecks** (Income → Add Paycheck) — one per person *per company* per
+  month: annual salary, monthly gross, and the deductions (taxes, 401k, HSA,
+  medical, dental and vision). Net income is derived, never stored: gross less
+  every deduction. Someone working two jobs records two paychecks a month and
+  cash flow adds them together.
+- **Other income** — one-off money that isn't part of a paycheck: dividends,
+  side work, gifts. Don't record salary here as well, or it will be counted
+  twice.
+
+The **Cash Flow** page rolls those up month by month against spending:
+
+| Column | Meaning |
+|---|---|
+| Gross / Other | What was earned, before deductions |
+| Net Income | Paycheck net + other income — what reached the bank |
+| Expenses | Transactions for the month, as that person's share when filtered |
+| Savings | Net income + 401k + HSA − expenses |
+
+401k and HSA are added back because they're money saved before it was ever
+spendable — it never appears in net income, so leaving it out would understate
+what the household put away.
+
+Pick any month to see a Sankey of it: income splits into taxes, retirement,
+insurance and take-home; take-home splits into spending categories and whatever
+went unspent.
 
 ## The Spending page
 
@@ -220,6 +254,10 @@ Three separate ideas, deliberately:
   own, so changing an account's split re-attributes its whole history.
 - **Logins** are usernames and passwords. One login can cover a whole household,
   and every login sees all data — there is no per-login privacy boundary.
+
+Net worth balances carry a person too: each account is attributed to one person
+or left **Combined** for jointly held ones, so a couple can record separate 401k
+and Roth balances alongside a shared mortgage and house.
 
 Expenses with no account (cash, Venmo, a check) have no default to inherit, so
 they need an explicit split; the form pre-fills an even one.

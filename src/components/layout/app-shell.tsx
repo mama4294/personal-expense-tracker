@@ -2,13 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, DollarSign, Landmark, Settings, Target } from "lucide-react";
+import {
+  ArrowLeftRight,
+  BarChart3,
+  DollarSign,
+  Landmark,
+  Settings,
+  Target,
+} from "lucide-react";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/", label: "Spending", icon: BarChart3 },
   { href: "/income", label: "Income", icon: DollarSign },
+  { href: "/cash-flow", label: "Cash Flow", icon: ArrowLeftRight },
   { href: "/net-worth", label: "Net Worth", icon: Landmark },
   { href: "/fi", label: "Financial Independence", icon: Target },
   { href: "/settings", label: "Settings", icon: Settings },

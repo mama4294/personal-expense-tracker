@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input, Textarea } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
+  Badge,
   Table,
   TableBody,
   TableCell,
@@ -20,20 +20,32 @@ import {
   StatCard,
 } from "@/components/charts/dashboard-charts";
 import {
+  balanceKey,
+  COMBINED,
+  DEFAULT_ACCOUNTS,
+  defaultRows,
+  newRow,
+  NetWorthDialog,
+  rowsFromSnapshot,
+  type BalanceRow,
+} from "@/components/net-worth/net-worth-dialog";
+import {
   ASSET_LABELS,
   formatCurrency,
   formatCurrencyPrecise,
-  INVESTMENT_ASSETS,
+  formatMonthLabel,
   LIABILITY_LABELS,
 } from "@/lib/utils";
 
-type AssetType = keyof typeof ASSET_LABELS;
-type LiabilityType = keyof typeof LIABILITY_LABELS;
+type Person = { id: string; name: string; isActive: boolean };
 
 type Balance = {
-  assetType: AssetType | null;
-  liabilityType: LiabilityType | null;
+  id: string;
+  assetType: string | null;
+  liabilityType: string | null;
   amount: string;
+  personId: string | null;
+  person: { id: string; name: string } | null;
 };
 
 type Snapshot = {
@@ -49,23 +61,6 @@ type NetWorthData = {
   latestNetWorth: number;
 };
 
-const ASSET_ORDER: AssetType[] = [
-  "BROKERAGE",
-  "FOUR_O_ONE_K",
-  "ROTH_IRA",
-  "HSA",
-  "CHECKING",
-  "SAVINGS",
-  "CRYPTO",
-  "HOME_VALUE",
-];
-
-const LIABILITY_ORDER: LiabilityType[] = ["MORTGAGE", "CAR_LOAN"];
-
-const emptyBalances: Record<string, string> = Object.fromEntries(
-  [...ASSET_ORDER, ...LIABILITY_ORDER].map((key) => [key, ""]),
-);
-
 function currentMonth() {
   return new Date().toISOString().slice(0, 7);
 }
@@ -76,107 +71,116 @@ function sumBalances(balances: Balance[], kind: "asset" | "liability") {
     .reduce((sum, balance) => sum + Number(balance.amount), 0);
 }
 
-/** Form contents for a month: the saved snapshot if there is one, else blank. */
-function snapshotToForm(month: string, snapshots: Snapshot[]) {
-  const existing = snapshots.find(
-    (snapshot) => snapshot.month.slice(0, 7) === month,
-  );
-
-  if (!existing) return { values: { ...emptyBalances }, notes: "" };
-
-  const values = { ...emptyBalances };
-  for (const balance of existing.balances) {
-    const key = balance.assetType ?? balance.liabilityType;
-    if (key) values[key] = String(Number(balance.amount));
-  }
-
-  return { values, notes: existing.notes ?? "" };
-}
-
 export default function NetWorthPage() {
   const [data, setData] = useState<NetWorthData | null>(null);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [month, setMonth] = useState(currentMonth);
-  const [values, setValues] = useState<Record<string, string>>(emptyBalances);
+  const [rows, setRows] = useState<BalanceRow[]>([]);
   const [notes, setNotes] = useState("");
+  const [previousBalances, setPreviousBalances] = useState<Record<string, number>>(
+    {},
+  );
+  const [previousMonth, setPreviousMonth] = useState<string | null>(null);
+
   const [message, setMessage] = useState<{ tone: "error" | "ok"; text: string } | null>(
     null,
   );
-  const [saving, setSaving] = useState(false);
 
-  const load = useCallback(async (): Promise<Snapshot[] | null> => {
-    const [dashboardResponse, snapshotResponse] = await Promise.all([
+  const activePeople = people.filter((person) => person.isActive);
+
+  const load = useCallback(async () => {
+    const [dashboardResponse, snapshotResponse, peopleResponse] = await Promise.all([
       fetch("/api/dashboard/net-worth"),
       fetch("/api/net-worth"),
+      fetch("/api/people"),
     ]);
 
-    if (!dashboardResponse.ok || !snapshotResponse.ok) {
+    if (!dashboardResponse.ok || !snapshotResponse.ok || !peopleResponse.ok) {
       setMessage({ tone: "error", text: "Could not load net worth data." });
-      return null;
+      return;
     }
 
-    const snapshotData: Snapshot[] = await snapshotResponse.json();
     setData(await dashboardResponse.json());
-    setSnapshots(snapshotData);
-    return snapshotData;
+    setSnapshots(await snapshotResponse.json());
+    setPeople(await peopleResponse.json());
   }, []);
 
   useEffect(() => {
     async function run() {
-      const snapshotData = await load();
-      if (snapshotData) applyMonth(currentMonth(), snapshotData);
+      await load();
     }
     run();
-    // applyMonth only touches state setters, which are stable.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load]);
 
-  /** Selecting a month loads whatever is already stored for it. */
-  function applyMonth(nextMonth: string, snapshotData: Snapshot[] = snapshots) {
-    const form = snapshotToForm(nextMonth, snapshotData);
-    setMonth(nextMonth);
-    setValues(form.values);
-    setNotes(form.notes);
+  const isExisting = snapshots.some(
+    (snapshot) => snapshot.month.slice(0, 7) === month,
+  );
+
+  /** Guarantees the everyday accounts are present, without duplicating them. */
+  function withDefaultAccounts(existingRows: BalanceRow[]): BalanceRow[] {
+    const present = new Set(
+      existingRows
+        .filter((row) => row.kind === "asset")
+        .map((row) => row.type),
+    );
+
+    const missing = DEFAULT_ACCOUNTS.filter((type) => !present.has(type)).map(
+      (type) => newRow("asset", type),
+    );
+
+    return [...existingRows, ...missing];
   }
 
-  async function save() {
-    setSaving(true);
-    setMessage(null);
+  function openFor(targetMonth: string) {
+    const existing = snapshots.find(
+      (snapshot) => snapshot.month.slice(0, 7) === targetMonth,
+    );
 
-    const balances = [
-      ...ASSET_ORDER.filter((key) => values[key] !== "").map((key) => ({
-        assetType: key,
-        amount: Number(values[key]),
-      })),
-      ...LIABILITY_ORDER.filter((key) => values[key] !== "").map((key) => ({
-        liabilityType: key,
-        amount: Number(values[key]),
-      })),
-    ];
+    // "Previous" is always the closest earlier month, even when editing an
+    // existing snapshot — that's the value worth comparing against.
+    const previous = snapshots
+      .filter((snapshot) => snapshot.month.slice(0, 7) < targetMonth)
+      .sort((a, b) => b.month.localeCompare(a.month))[0];
 
-    if (balances.length === 0) {
-      setMessage({ tone: "error", text: "Enter at least one balance." });
-      setSaving(false);
-      return;
+    setPreviousMonth(previous ? previous.month.slice(0, 7) : null);
+    setPreviousBalances(
+      previous
+        ? Object.fromEntries(
+            previous.balances.map((balance) => [
+              balanceKey(
+                (balance.assetType ?? balance.liabilityType) as string,
+                balance.personId ?? COMBINED,
+              ),
+              Number(balance.amount),
+            ]),
+          )
+        : {},
+    );
+
+    setMonth(targetMonth);
+
+    if (existing) {
+      setRows(withDefaultAccounts(rowsFromSnapshot(existing.balances)));
+      setNotes(existing.notes ?? "");
+    } else if (previous) {
+      // Carry last month's accounts forward with blank amounts — the same
+      // accounts, held by the same people, get re-entered every month.
+      setRows(
+        withDefaultAccounts(
+          rowsFromSnapshot(previous.balances).map((row) => ({ ...row, amount: "" })),
+        ),
+      );
+      setNotes("");
+    } else {
+      setRows(defaultRows());
+      setNotes("");
     }
 
-    const response = await fetch("/api/net-worth", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ month, notes: notes || undefined, balances }),
-    });
-
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      setMessage({ tone: "error", text: body.error ?? "Could not save the snapshot." });
-      setSaving(false);
-      return;
-    }
-
-    setMessage({ tone: "ok", text: `Saved balances for ${month}.` });
-    const snapshotData = await load();
-    if (snapshotData) applyMonth(month, snapshotData);
-    setSaving(false);
+    setDialogOpen(true);
   }
 
   const allocation = (data?.allocation ?? []).map((item) => ({
@@ -184,34 +188,20 @@ export default function NetWorthPage() {
     total: item.total,
   }));
 
-  const editingExisting = snapshots.some(
-    (snapshot) => snapshot.month.slice(0, 7) === month,
-  );
-
-  const draftTotals = useMemo(() => {
-    const assets = ASSET_ORDER.reduce(
-      (sum, key) => sum + (Number(values[key]) || 0),
-      0,
-    );
-    const liabilities = LIABILITY_ORDER.reduce(
-      (sum, key) => sum + (Number(values[key]) || 0),
-      0,
-    );
-    const investments = INVESTMENT_ASSETS.reduce(
-      (sum, key) => sum + (Number(values[key]) || 0),
-      0,
-    );
-    return { assets, liabilities, investments, netWorth: assets - liabilities };
-  }, [values]);
-
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold">Net Worth Dashboard</h2>
-        <p className="text-sm text-muted-foreground">
-          Enter balances once a month, then track assets, liabilities, and net worth
-          over time.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-semibold">Net Worth</h2>
+          <p className="text-sm text-muted-foreground">
+            Enter balances once a month, then track assets, liabilities, and net
+            worth over time.
+          </p>
+        </div>
+        <Button onClick={() => openFor(currentMonth())}>
+          <Plus className="h-4 w-4" />
+          Add Balances
+        </Button>
       </div>
 
       {message ? (
@@ -236,97 +226,10 @@ export default function NetWorthPage() {
           value={String(data?.timeline.length ?? 0)}
         />
         <StatCard
-          label="Investments (draft month)"
-          value={formatCurrency(draftTotals.investments)}
-          hint="Brokerage, 401k, Roth IRA, HSA"
+          label="Latest Assets"
+          value={formatCurrency(data?.timeline.at(-1)?.assets ?? 0)}
         />
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Monthly Balances</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            {editingExisting
-              ? `Editing the saved snapshot for ${month}. Saving replaces it.`
-              : `New snapshot for ${month}.`}
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Month</Label>
-              <Input
-                type="month"
-                value={month}
-                onChange={(event) => applyMonth(event.target.value)}
-              />
-            </div>
-          </div>
-
-          <div>
-            <h3 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted-foreground">
-              Assets
-            </h3>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {ASSET_ORDER.map((key) => (
-                <div key={key} className="space-y-2">
-                  <Label>{ASSET_LABELS[key]}</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={values[key] ?? ""}
-                    onChange={(event) =>
-                      setValues({ ...values, [key]: event.target.value })
-                    }
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <h3 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted-foreground">
-              Liabilities
-            </h3>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {LIABILITY_ORDER.map((key) => (
-                <div key={key} className="space-y-2">
-                  <Label>{LIABILITY_LABELS[key]}</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={values[key] ?? ""}
-                    onChange={(event) =>
-                      setValues({ ...values, [key]: event.target.value })
-                    }
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Notes</Label>
-            <Textarea
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-4">
-            <Button onClick={save} disabled={saving}>
-              {editingExisting ? "Update Snapshot" : "Save Snapshot"}
-            </Button>
-            <p className="text-sm text-muted-foreground">
-              Assets {formatCurrencyPrecise(draftTotals.assets)} − Liabilities{" "}
-              {formatCurrencyPrecise(draftTotals.liabilities)} ={" "}
-              <span className="font-medium text-foreground">
-                {formatCurrencyPrecise(draftTotals.netWorth)}
-              </span>
-            </p>
-          </div>
-        </CardContent>
-      </Card>
 
       <div className="grid gap-6 xl:grid-cols-2">
         <Card>
@@ -340,6 +243,7 @@ export default function NetWorthPage() {
               lines={[
                 { key: "netWorth", color: SERIES_COLORS[0], name: "Net Worth" },
               ]}
+              xTickFormatter={formatMonthLabel}
             />
           </CardContent>
         </Card>
@@ -362,6 +266,7 @@ export default function NetWorthPage() {
               data={data?.timeline ?? []}
               xKey="month"
               lines={[{ key: "assets", color: SERIES_COLORS[0], name: "Assets" }]}
+              xTickFormatter={formatMonthLabel}
             />
           </CardContent>
         </Card>
@@ -377,6 +282,7 @@ export default function NetWorthPage() {
               lines={[
                 { key: "liabilities", color: SERIES_COLORS[1], name: "Liabilities" },
               ]}
+              xTickFormatter={formatMonthLabel}
             />
           </CardContent>
         </Card>
@@ -385,16 +291,19 @@ export default function NetWorthPage() {
       <Card>
         <CardHeader>
           <CardTitle>Snapshot History ({snapshots.length})</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Select a month to see the accounts behind it.
+          </p>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Month</TableHead>
+                <TableHead>Accounts</TableHead>
                 <TableHead className="text-right">Assets</TableHead>
                 <TableHead className="text-right">Liabilities</TableHead>
                 <TableHead className="text-right">Net Worth</TableHead>
-                <TableHead>Notes</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -402,32 +311,78 @@ export default function NetWorthPage() {
               {snapshots.map((snapshot) => {
                 const assets = sumBalances(snapshot.balances, "asset");
                 const liabilities = sumBalances(snapshot.balances, "liability");
+                const key = snapshot.month.slice(0, 7);
+                const open = expanded === key;
 
                 return (
-                  <TableRow key={snapshot.id}>
-                    <TableCell className="whitespace-nowrap">
-                      {snapshot.month.slice(0, 7)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatCurrencyPrecise(assets)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatCurrencyPrecise(liabilities)}
-                    </TableCell>
-                    <TableCell className="text-right font-medium tabular-nums">
-                      {formatCurrencyPrecise(assets - liabilities)}
-                    </TableCell>
-                    <TableCell>{snapshot.notes ?? "—"}</TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => applyMonth(snapshot.month.slice(0, 7))}
-                      >
-                        Edit
-                      </Button>
-                    </TableCell>
-                  </TableRow>
+                  <>
+                    <TableRow key={snapshot.id}>
+                      <TableCell className="whitespace-nowrap">
+                        <button
+                          type="button"
+                          className="font-medium underline-offset-2 hover:underline"
+                          onClick={() => setExpanded(open ? null : key)}
+                        >
+                          {formatMonthLabel(key)}
+                        </button>
+                      </TableCell>
+                      <TableCell>{snapshot.balances.length}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatCurrencyPrecise(assets)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatCurrencyPrecise(liabilities)}
+                      </TableCell>
+                      <TableCell className="text-right font-medium tabular-nums">
+                        {formatCurrencyPrecise(assets - liabilities)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openFor(key)}
+                        >
+                          Edit
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                    {open ? (
+                      <TableRow key={`${snapshot.id}-detail`}>
+                        <TableCell colSpan={6} className="bg-muted/40">
+                          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                            {snapshot.balances.map((balance) => (
+                              <div
+                                key={balance.id}
+                                className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2 text-sm"
+                              >
+                                <span>
+                                  {balance.assetType
+                                    ? ASSET_LABELS[balance.assetType]
+                                    : LIABILITY_LABELS[balance.liabilityType ?? ""]}
+                                  <Badge
+                                    variant={balance.person ? "default" : "outline"}
+                                    className="ml-2"
+                                  >
+                                    {balance.person?.name ?? "Combined"}
+                                  </Badge>
+                                </span>
+                                <span
+                                  className={
+                                    balance.liabilityType
+                                      ? "tabular-nums text-destructive"
+                                      : "tabular-nums"
+                                  }
+                                >
+                                  {balance.liabilityType ? "−" : ""}
+                                  {formatCurrencyPrecise(Number(balance.amount))}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                  </>
                 );
               })}
               {snapshots.length === 0 ? (
@@ -441,6 +396,22 @@ export default function NetWorthPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <NetWorthDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        month={month}
+        onMonthChange={(next) => openFor(next)}
+        rows={rows}
+        onRowsChange={setRows}
+        notes={notes}
+        onNotesChange={setNotes}
+        people={activePeople}
+        isExisting={isExisting}
+        previousBalances={previousBalances}
+        previousMonth={previousMonth}
+        onSaved={load}
+      />
     </div>
   );
 }

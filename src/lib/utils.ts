@@ -38,6 +38,29 @@ export function formatMonth(date: Date): string {
   }).format(date);
 }
 
+/**
+ * Month keys are stored and compared as "2026-07"; people read "Jul 26".
+ * Accepts either a bare key or a full ISO date and leaves anything else alone.
+ */
+export function formatMonthLabel(value: string): string {
+  const [year, month] = value.slice(0, 7).split("-").map(Number);
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    month < 1 ||
+    month > 12
+  ) {
+    return value;
+  }
+
+  const name = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(year, month - 1, 1)));
+
+  return `${name} ${String(year).slice(-2)}`;
+}
+
 export function toDateInputValue(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
@@ -98,6 +121,7 @@ export const ASSET_LABELS: Record<string, string> = {
 export const LIABILITY_LABELS: Record<string, string> = {
   MORTGAGE: "Mortgage",
   CAR_LOAN: "Car Loan",
+  CREDIT_CARD: "Credit Card",
 };
 
 export const INVESTMENT_ASSETS = [

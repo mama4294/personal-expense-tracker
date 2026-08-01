@@ -269,29 +269,119 @@ async function main() {
     created += 1;
   }
 
-  // --- income --------------------------------------------------------------
+  // --- other income --------------------------------------------------------
+  // Deliberately NOT salary: salary lives in MonthlyIncome, and recording it in
+  // both places would double-count it in cash flow.
   for (let monthsBack = 11; monthsBack >= 0; monthsBack -= 1) {
-    const payday = utcDate(now.getUTCFullYear(), now.getUTCMonth() - monthsBack, 15);
-    const bonus = monthsBack === 6 || monthsBack === 0;
+    const month = now.getUTCMonth() - monthsBack;
 
-    await db.income.create({
-      data: {
-        date: payday,
-        source: "Northwind Corp",
-        description: bonus ? "Salary + bonus" : "Salary",
-        amount: bonus ? 9400 : 7250,
-        personId: alex.id,
-      },
+    // Dividends land quarterly.
+    if (monthsBack % 3 === 0) {
+      await db.income.create({
+        data: {
+          date: utcDate(now.getUTCFullYear(), month, 20),
+          source: "Brokerage",
+          description: "Quarterly dividends",
+          amount: between(310, 640),
+          personId: alex.id,
+        },
+      });
+    }
+
+    // An occasional side job.
+    if (monthsBack % 4 === 1) {
+      await db.income.create({
+        data: {
+          date: utcDate(now.getUTCFullYear(), month, 8),
+          source: "Freelance",
+          description: "Design work",
+          amount: between(450, 1200),
+          personId: sam.id,
+        },
+      });
+    }
+  }
+
+  // --- companies and paychecks ---------------------------------------------
+  // Sam works two jobs, so their month has two paychecks — the case a single
+  // paycheck-per-person model couldn't represent.
+  const companySpecs = [
+    { person: alex, name: "Northwind Corp" },
+    { person: sam, name: "Lakeside Studio" },
+    { person: sam, name: "Bridge Coffee" },
+  ];
+
+  const companies: Record<string, string> = {};
+  for (const spec of companySpecs) {
+    const company = await db.company.upsert({
+      where: { personId_name: { personId: spec.person.id, name: spec.name } },
+      update: {},
+      create: { name: spec.name, personId: spec.person.id },
     });
-    await db.income.create({
-      data: {
-        date: payday,
-        source: "Lakeside Studio",
-        description: "Salary",
-        amount: 4380,
-        personId: sam.id,
-      },
-    });
+    companies[spec.name] = company.id;
+  }
+
+  // Deductions as realistic fractions of gross, so net income and the Sankey
+  // both look like a real payslip.
+  const jobs = [
+    {
+      person: alex,
+      company: "Northwind Corp",
+      annualSalary: 132_000,
+      monthlyGross: 11_000,
+      hsa: 150,
+      medical: 310,
+      bonusMonths: true,
+    },
+    {
+      person: sam,
+      company: "Lakeside Studio",
+      annualSalary: 66_000,
+      monthlyGross: 5_500,
+      hsa: 250,
+      medical: 205,
+      bonusMonths: false,
+    },
+    {
+      person: sam,
+      company: "Bridge Coffee",
+      annualSalary: 12_000,
+      monthlyGross: 1_000,
+      hsa: 0,
+      medical: 0,
+      bonusMonths: false,
+    },
+  ];
+
+  for (let monthsBack = 11; monthsBack >= 0; monthsBack -= 1) {
+    const month = utcDate(now.getUTCFullYear(), now.getUTCMonth() - monthsBack, 1);
+
+    for (const job of jobs) {
+      const bonus =
+        job.bonusMonths && (monthsBack === 6 || monthsBack === 0) ? 2_150 : 0;
+      const gross = job.monthlyGross + bonus;
+      const companyId = companies[job.company];
+
+      const existing = await db.monthlyIncome.findFirst({
+        where: { month, personId: job.person.id, companyId },
+      });
+      if (existing) continue;
+
+      await db.monthlyIncome.create({
+        data: {
+          month,
+          personId: job.person.id,
+          companyId,
+          annualSalary: job.annualSalary,
+          grossIncome: gross,
+          taxes: Number((gross * 0.24).toFixed(2)),
+          retirement401k: Number((job.monthlyGross * 0.08).toFixed(2)),
+          hsa: job.hsa,
+          medical: job.medical,
+          dentalVision: job.medical > 0 ? 48 : 0,
+        },
+      });
+    }
   }
 
   // --- net worth snapshots -------------------------------------------------
@@ -306,6 +396,7 @@ async function main() {
   let crypto = 9_400;
   let mortgage = 441_000;
   let carLoan = 22_800;
+  let cardBalance = 2_400;
 
   for (let monthsBack = 11; monthsBack >= 0; monthsBack -= 1) {
     const month = utcDate(now.getUTCFullYear(), now.getUTCMonth() - monthsBack, 1);
@@ -319,7 +410,10 @@ async function main() {
     crypto = Math.round(crypto * (1 + between(-0.09, 0.14)));
     mortgage = Math.round(mortgage - between(780, 940));
     carLoan = Math.max(0, Math.round(carLoan - between(410, 470)));
+    cardBalance = Math.round(between(900, 4200));
 
+    // Retirement accounts belong to individuals; the house, joint savings, and
+    // the mortgage are held together (personId null = Combined).
     await db.netWorthSnapshot.upsert({
       where: { month },
       update: {},
@@ -327,16 +421,27 @@ async function main() {
         month,
         balances: {
           create: [
-            { assetType: "BROKERAGE", amount: brokerage },
-            { assetType: "FOUR_O_ONE_K", amount: retirement },
-            { assetType: "ROTH_IRA", amount: roth },
-            { assetType: "HSA", amount: hsa },
+            { assetType: "BROKERAGE", amount: brokerage, personId: alex.id },
+            {
+              assetType: "FOUR_O_ONE_K",
+              amount: Math.round(retirement * 0.6),
+              personId: alex.id,
+            },
+            {
+              assetType: "FOUR_O_ONE_K",
+              amount: Math.round(retirement * 0.4),
+              personId: sam.id,
+            },
+            { assetType: "ROTH_IRA", amount: Math.round(roth * 0.55), personId: alex.id },
+            { assetType: "ROTH_IRA", amount: Math.round(roth * 0.45), personId: sam.id },
+            { assetType: "HSA", amount: hsa, personId: sam.id },
             { assetType: "CHECKING", amount: checking },
             { assetType: "SAVINGS", amount: savings },
-            { assetType: "CRYPTO", amount: crypto },
+            { assetType: "CRYPTO", amount: crypto, personId: alex.id },
             { assetType: "HOME_VALUE", amount: 615_000 },
             { liabilityType: "MORTGAGE", amount: mortgage },
-            { liabilityType: "CAR_LOAN", amount: carLoan },
+            { liabilityType: "CAR_LOAN", amount: carLoan, personId: sam.id },
+            { liabilityType: "CREDIT_CARD", amount: cardBalance, personId: alex.id },
           ],
         },
       },
@@ -373,7 +478,8 @@ async function main() {
   console.log(`  people:       Alex, Sam`);
   console.log(`  accounts:     ${accountSpecs.length}`);
   console.log(`  transactions: ${created} (${Number(totals._sum.amount ?? 0).toFixed(2)} total)`);
-  console.log(`  income:       24 entries over 12 months`);
+  console.log(`  companies:    ${companySpecs.length} (Sam works two jobs)`);
+  console.log(`  income:       36 monthly paychecks + a few other-income entries`);
   console.log(`  net worth:    12 monthly snapshots`);
   console.log("  sample CSV:   demo-import.csv (try Import CSV on the Spending page)");
 }

@@ -38,7 +38,12 @@ import {
   type Transaction,
 } from "@/components/expenses/transactions-table";
 import type { Person } from "@/components/people/split-editor";
-import { formatCurrency, formatCurrencyPrecise, formatPercent } from "@/lib/utils";
+import {
+  formatCurrency,
+  formatCurrencyPrecise,
+  formatMonthLabel,
+  formatPercent,
+} from "@/lib/utils";
 
 type SpendingData = {
   totalSpending: number;
@@ -393,6 +398,7 @@ export default function SpendingPage() {
               xKey="month"
               yKey="total"
               name="Spending"
+              xTickFormatter={formatMonthLabel}
             />
           </CardContent>
         </Card>

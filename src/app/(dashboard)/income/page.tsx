@@ -1,25 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -35,9 +19,20 @@ import {
   StatCard,
 } from "@/components/charts/dashboard-charts";
 import {
+  blankIncome,
+  IncomeDialog,
+  type IncomeDraft,
+} from "@/components/income/income-dialog";
+import {
+  blankPaycheck,
+  PaycheckDialog,
+  type PaycheckDraft,
+} from "@/components/income/paycheck-dialog";
+import { netIncome } from "@/lib/income";
+import {
   formatCurrency,
   formatCurrencyPrecise,
-  toDateInputValue,
+  formatMonthLabel,
 } from "@/lib/utils";
 
 type Person = { id: string; name: string; isActive: boolean };
@@ -52,6 +47,29 @@ type IncomeEntry = {
   person: { id: string; name: string };
 };
 
+type Company = {
+  id: string;
+  name: string;
+  personId: string;
+  isActive: boolean;
+};
+
+type Paycheck = {
+  id: string;
+  month: string;
+  personId: string;
+  person: { id: string; name: string };
+  companyId: string | null;
+  company: { id: string; name: string } | null;
+  annualSalary: string;
+  grossIncome: string;
+  medical: string;
+  dentalVision: string;
+  retirement401k: string;
+  hsa: string;
+  taxes: string;
+};
+
 type IncomeData = {
   totalIncome: number;
   monthlyIncome: { month: string; total: number }[];
@@ -60,35 +78,46 @@ type IncomeData = {
   incomeVsExpenses: { month: string; income: number; expenses: number }[];
 };
 
-const emptyForm = {
-  date: toDateInputValue(new Date()),
-  source: "",
-  description: "",
-  amount: "",
-  personId: "",
-};
-
 export default function IncomePage() {
   const [data, setData] = useState<IncomeData | null>(null);
   const [entries, setEntries] = useState<IncomeEntry[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
-  const [form, setForm] = useState(emptyForm);
-  const [editing, setEditing] = useState<(typeof emptyForm & { id: string }) | null>(
-    null,
+  const [paychecks, setPaychecks] = useState<Paycheck[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [draft, setDraft] = useState<IncomeDraft>(blankIncome);
+  const [paycheckOpen, setPaycheckOpen] = useState(false);
+  const [paycheckDraft, setPaycheckDraft] = useState<PaycheckDraft>(() =>
+    blankPaycheck(new Date().toISOString().slice(0, 7)),
   );
   const [message, setMessage] = useState<{ tone: "error" | "ok"; text: string } | null>(
     null,
   );
-  const [saving, setSaving] = useState(false);
+
+  const activePeople = people.filter((person) => person.isActive);
 
   const load = useCallback(async () => {
-    const [dashboardResponse, entriesResponse, peopleResponse] = await Promise.all([
-      fetch("/api/dashboard/income"),
-      fetch("/api/income"),
-      fetch("/api/people"),
-    ]);
+    const [
+      dashboardResponse,
+      entriesResponse,
+      peopleResponse,
+      paycheckResponse,
+      companyResponse,
+    ] = await Promise.all([
+        fetch("/api/dashboard/income"),
+        fetch("/api/income"),
+        fetch("/api/people"),
+        fetch("/api/monthly-income"),
+        fetch("/api/companies"),
+      ]);
 
-    if (!dashboardResponse.ok || !entriesResponse.ok || !peopleResponse.ok) {
+    if (
+      !dashboardResponse.ok ||
+      !entriesResponse.ok ||
+      !peopleResponse.ok ||
+      !paycheckResponse.ok ||
+      !companyResponse.ok
+    ) {
       setMessage({ tone: "error", text: "Could not load income data." });
       return;
     }
@@ -96,9 +125,9 @@ export default function IncomePage() {
     setData(await dashboardResponse.json());
     setEntries(await entriesResponse.json());
     setPeople(await peopleResponse.json());
+    setPaychecks(await paycheckResponse.json());
+    setCompanies(await companyResponse.json());
   }, []);
-
-  const activePeople = people.filter((person) => person.isActive);
 
   useEffect(() => {
     async function run() {
@@ -107,55 +136,81 @@ export default function IncomePage() {
     run();
   }, [load]);
 
-  async function submit(
-    url: string,
-    method: "POST" | "PATCH",
-    values: typeof emptyForm,
-    successText: string,
-  ): Promise<boolean> {
-    setSaving(true);
-    setMessage(null);
+  function openAddOther() {
+    setDraft({ ...blankIncome(), personId: activePeople[0]?.id ?? "" });
+    setDialogOpen(true);
+  }
 
-    const response = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        date: values.date,
-        source: values.source,
-        description: values.description || undefined,
-        amount: Number(values.amount),
-        personId: values.personId,
-      }),
+  function openAddPaycheck() {
+    setPaycheckDraft(
+      blankPaycheck(
+        new Date().toISOString().slice(0, 7),
+        activePeople[0]?.id ?? "",
+      ),
+    );
+    setPaycheckOpen(true);
+  }
+
+  function openEditPaycheck(paycheck: Paycheck) {
+    setPaycheckDraft({
+      month: paycheck.month.slice(0, 7),
+      personId: paycheck.personId,
+      companyId: paycheck.companyId ?? "",
+      annualSalary: String(Number(paycheck.annualSalary)),
+      grossIncome: String(Number(paycheck.grossIncome)),
+      medical: String(Number(paycheck.medical)),
+      dentalVision: String(Number(paycheck.dentalVision)),
+      retirement401k: String(Number(paycheck.retirement401k)),
+      hsa: String(Number(paycheck.hsa)),
+      taxes: String(Number(paycheck.taxes)),
     });
+    setPaycheckOpen(true);
+  }
 
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      setMessage({ tone: "error", text: body.error ?? "Could not save income." });
-      setSaving(false);
-      return false;
+  async function deletePaycheck(paycheck: Paycheck) {
+    if (
+      !window.confirm(
+        `Delete the ${formatMonthLabel(paycheck.month)} paycheck for ${paycheck.person.name}?`,
+      )
+    ) {
+      return;
     }
 
-    setMessage({ tone: "ok", text: successText });
+    const response = await fetch(`/api/monthly-income/${paycheck.id}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) {
+      setMessage({ tone: "error", text: "Could not delete the paycheck." });
+      return;
+    }
+
+    setMessage({ tone: "ok", text: "Paycheck deleted." });
     await load();
-    setSaving(false);
-    return true;
   }
 
-  async function handleCreate(event: React.FormEvent) {
-    event.preventDefault();
-    const created = await submit("/api/income", "POST", form, "Income saved.");
-    if (created) setForm({ ...emptyForm, date: form.date });
+  /** Numbers for a stored paycheck row, as the shared helpers expect them. */
+  function toPaycheck(entry: Paycheck) {
+    return {
+      grossIncome: Number(entry.grossIncome),
+      medical: Number(entry.medical),
+      dentalVision: Number(entry.dentalVision),
+      retirement401k: Number(entry.retirement401k),
+      hsa: Number(entry.hsa),
+      taxes: Number(entry.taxes),
+    };
   }
 
-  async function handleSaveEdit() {
-    if (!editing) return;
-    const updated = await submit(
-      `/api/income/${editing.id}`,
-      "PATCH",
-      editing,
-      "Income updated.",
-    );
-    if (updated) setEditing(null);
+
+  function openEdit(entry: IncomeEntry) {
+    setDraft({
+      id: entry.id,
+      date: entry.date.slice(0, 10),
+      source: entry.source,
+      description: entry.description ?? "",
+      amount: String(Number(entry.amount)),
+      personId: entry.personId,
+    });
+    setDialogOpen(true);
   }
 
   async function handleDelete(entry: IncomeEntry) {
@@ -183,11 +238,27 @@ export default function IncomePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold">Income Dashboard</h2>
-        <p className="text-sm text-muted-foreground">
-          Record income by person and compare it against spending.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-semibold">Income</h2>
+          <p className="text-sm text-muted-foreground">
+            Record income by person and compare it against spending.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={openAddOther}
+            disabled={activePeople.length === 0}
+          >
+            <Plus className="h-4 w-4" />
+            Other Income
+          </Button>
+          <Button onClick={openAddPaycheck} disabled={activePeople.length === 0}>
+            <Plus className="h-4 w-4" />
+            Add Paycheck
+          </Button>
+        </div>
       </div>
 
       {message ? (
@@ -202,6 +273,16 @@ export default function IncomePage() {
         </p>
       ) : null}
 
+      {activePeople.length === 0 ? (
+        <Card>
+          <CardContent className="p-5 text-sm">
+            No people yet. Add them under{" "}
+            <span className="font-medium">Settings → People</span> before recording
+            income.
+          </CardContent>
+        </Card>
+      ) : null}
+
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard label="Total Income" value={formatCurrency(data?.totalIncome ?? 0)} />
         <StatCard
@@ -214,85 +295,6 @@ export default function IncomePage() {
         />
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Add Income</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleCreate} className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Date</Label>
-              <Input
-                type="date"
-                value={form.date}
-                onChange={(event) => setForm({ ...form, date: event.target.value })}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Amount</Label>
-              <Input
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={form.amount}
-                onChange={(event) => setForm({ ...form, amount: event.target.value })}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Source</Label>
-              <Input
-                placeholder="Employer, side project, dividend"
-                value={form.source}
-                onChange={(event) => setForm({ ...form, source: event.target.value })}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Person</Label>
-              <Select
-                value={form.personId}
-                onValueChange={(value) => setForm({ ...form, personId: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a person" />
-                </SelectTrigger>
-                <SelectContent>
-                  {activePeople.map((person) => (
-                    <SelectItem key={person.id} value={person.id}>
-                      {person.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label>Description</Label>
-              <Input
-                value={form.description}
-                onChange={(event) =>
-                  setForm({ ...form, description: event.target.value })
-                }
-              />
-            </div>
-            <div className="md:col-span-2">
-              <Button
-                type="submit"
-                disabled={saving || !form.personId || activePeople.length === 0}
-              >
-                Save Income
-              </Button>
-              {activePeople.length === 0 ? (
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Add people under Settings → People before recording income.
-                </p>
-              ) : null}
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-
       <div className="grid gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader>
@@ -304,6 +306,7 @@ export default function IncomePage() {
               xKey="month"
               yKey="total"
               name="Income"
+              xTickFormatter={formatMonthLabel}
             />
           </CardContent>
         </Card>
@@ -348,6 +351,7 @@ export default function IncomePage() {
                 { key: "income", color: SERIES_COLORS[0], name: "Income" },
                 { key: "expenses", color: SERIES_COLORS[1], name: "Expenses" },
               ]}
+              xTickFormatter={formatMonthLabel}
             />
           </CardContent>
         </Card>
@@ -355,7 +359,102 @@ export default function IncomePage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Income Entries ({entries.length})</CardTitle>
+          <CardTitle>Monthly Paychecks ({paychecks.length})</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Gross pay and deductions per person per month. Net is what reached the
+            bank; 401k and HSA are saved rather than spent.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Month</TableHead>
+                <TableHead>Person</TableHead>
+                <TableHead>Company</TableHead>
+                <TableHead className="text-right">Annual Salary</TableHead>
+                <TableHead className="text-right">Gross</TableHead>
+                <TableHead className="text-right">Taxes</TableHead>
+                <TableHead className="text-right">401k</TableHead>
+                <TableHead className="text-right">HSA</TableHead>
+                <TableHead className="text-right">Med + Dental</TableHead>
+                <TableHead className="text-right">Net</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {paychecks.map((entry) => {
+                const values = toPaycheck(entry);
+                return (
+                  <TableRow key={entry.id}>
+                    <TableCell className="whitespace-nowrap">
+                      {formatMonthLabel(entry.month)}
+                    </TableCell>
+                    <TableCell>{entry.person.name}</TableCell>
+                    <TableCell>{entry.company?.name ?? "—"}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatCurrency(Number(entry.annualSalary))}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatCurrencyPrecise(values.grossIncome)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatCurrencyPrecise(values.taxes)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatCurrencyPrecise(values.retirement401k)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatCurrencyPrecise(values.hsa)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatCurrencyPrecise(values.medical + values.dentalVision)}
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">
+                      {formatCurrencyPrecise(netIncome(values))}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <span className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Edit ${formatMonthLabel(entry.month)} paycheck`}
+                          onClick={() => openEditPaycheck(entry)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Delete ${formatMonthLabel(entry.month)} paycheck`}
+                          onClick={() => deletePaycheck(entry)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {paychecks.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={11} className="text-muted-foreground">
+                    No paychecks recorded yet. Add one to unlock the Cash Flow page.
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Other Income ({entries.length})</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            One-off income that isn&apos;t part of a paycheck — dividends, side work,
+            gifts.
+          </p>
         </CardHeader>
         <CardContent>
           <Table>
@@ -387,16 +486,7 @@ export default function IncomePage() {
                         variant="ghost"
                         size="icon"
                         aria-label={`Edit ${entry.source}`}
-                        onClick={() =>
-                          setEditing({
-                            id: entry.id,
-                            date: entry.date.slice(0, 10),
-                            source: entry.source,
-                            description: entry.description ?? "",
-                            amount: String(Number(entry.amount)),
-                            personId: entry.personId,
-                          })
-                        }
+                        onClick={() => openEdit(entry)}
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
@@ -424,86 +514,24 @@ export default function IncomePage() {
         </CardContent>
       </Card>
 
-      <Dialog
-        open={editing != null}
-        onOpenChange={(open) => (open ? null : setEditing(null))}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Income</DialogTitle>
-          </DialogHeader>
-          {editing ? (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Date</Label>
-                <Input
-                  type="date"
-                  value={editing.date}
-                  onChange={(event) =>
-                    setEditing({ ...editing, date: event.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Amount</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  value={editing.amount}
-                  onChange={(event) =>
-                    setEditing({ ...editing, amount: event.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Source</Label>
-                <Input
-                  value={editing.source}
-                  onChange={(event) =>
-                    setEditing({ ...editing, source: event.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Person</Label>
-                <Select
-                  value={editing.personId}
-                  onValueChange={(value) =>
-                    setEditing({ ...editing, personId: value })
-                  }
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {activePeople.map((person) => (
-                      <SelectItem key={person.id} value={person.id}>
-                        {person.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Description</Label>
-                <Input
-                  value={editing.description}
-                  onChange={(event) =>
-                    setEditing({ ...editing, description: event.target.value })
-                  }
-                />
-              </div>
-            </div>
-          ) : null}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditing(null)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSaveEdit} disabled={saving}>
-              Save Changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <PaycheckDialog
+        open={paycheckOpen}
+        onOpenChange={setPaycheckOpen}
+        draft={paycheckDraft}
+        onDraftChange={setPaycheckDraft}
+        people={activePeople}
+        companies={companies}
+        onSaved={load}
+      />
+
+      <IncomeDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        draft={draft}
+        onDraftChange={setDraft}
+        people={activePeople}
+        onSaved={load}
+      />
     </div>
   );
 }

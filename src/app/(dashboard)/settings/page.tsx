@@ -51,12 +51,21 @@ type Login = {
   createdAt: string;
 };
 
+type Company = {
+  id: string;
+  name: string;
+  personId: string;
+  isActive: boolean;
+  person: { id: string; name: string };
+};
+
 type Message = { tone: "error" | "ok"; text: string } | null;
 
 export default function SettingsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [logins, setLogins] = useState<Login[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [withdrawalRate, setWithdrawalRate] = useState("0.04");
@@ -69,6 +78,8 @@ export default function SettingsPage() {
   const [categoryDrafts, setCategoryDrafts] = useState<Record<string, string>>({});
   const [mergeTargets, setMergeTargets] = useState<Record<string, string>>({});
   const [personNames, setPersonNames] = useState<Record<string, string>>({});
+  const [companyNames, setCompanyNames] = useState<Record<string, string>>({});
+  const [newCompany, setNewCompany] = useState<Record<string, string>>({});
 
   const [newAccount, setNewAccount] = useState({ name: "" });
   const [newAccountSplits, setNewAccountSplits] = useState<SplitRow[]>([]);
@@ -83,19 +94,26 @@ export default function SettingsPage() {
   const activePeople = people.filter((person) => person.isActive);
 
   const loadSettings = useCallback(async () => {
-    const [accountResponse, settingsResponse, peopleResponse, loginResponse] =
-      await Promise.all([
-        fetch("/api/accounts"),
-        fetch("/api/settings"),
-        fetch("/api/people"),
-        fetch("/api/users"),
-      ]);
+    const [
+      accountResponse,
+      settingsResponse,
+      peopleResponse,
+      loginResponse,
+      companyResponse,
+    ] = await Promise.all([
+      fetch("/api/accounts"),
+      fetch("/api/settings"),
+      fetch("/api/people"),
+      fetch("/api/users"),
+      fetch("/api/companies"),
+    ]);
 
     if (
       !accountResponse.ok ||
       !settingsResponse.ok ||
       !peopleResponse.ok ||
-      !loginResponse.ok
+      !loginResponse.ok ||
+      !companyResponse.ok
     ) {
       setMessage({ tone: "error", text: "Could not load settings." });
       return;
@@ -126,9 +144,15 @@ export default function SettingsPage() {
     setWithdrawalRate(String(settingsData.settings?.withdrawalRate ?? 0.04));
     setCurrentUserId(settingsData.user?.id ?? null);
 
+    const companyData: Company[] = await companyResponse.json();
+
     setPeople(peopleData);
     setPersonNames(
       Object.fromEntries(peopleData.map((person) => [person.id, person.name])),
+    );
+    setCompanies(companyData);
+    setCompanyNames(
+      Object.fromEntries(companyData.map((company) => [company.id, company.name])),
     );
     setLogins(loginData);
 
@@ -204,6 +228,50 @@ export default function SettingsPage() {
       `/api/people/${person.id}`,
       { method: "DELETE" },
       `${person.name} deleted.`,
+    );
+  }
+
+  // --- Companies ------------------------------------------------------------
+
+  async function addCompany(person: Person) {
+    const name = (newCompany[person.id] ?? "").trim();
+    if (!name) return;
+
+    const created = await mutate(
+      "/api/companies",
+      { method: "POST", body: JSON.stringify({ name, personId: person.id }) },
+      `${name} added for ${person.name}.`,
+    );
+
+    if (created) setNewCompany({ ...newCompany, [person.id]: "" });
+  }
+
+  async function renameCompany(company: Company) {
+    const name = companyNames[company.id]?.trim();
+    if (!name || name === company.name) return;
+    await mutate(
+      `/api/companies/${company.id}`,
+      { method: "PATCH", body: JSON.stringify({ name }) },
+      "Company renamed.",
+    );
+  }
+
+  async function toggleCompany(company: Company) {
+    await mutate(
+      `/api/companies/${company.id}`,
+      { method: "PATCH", body: JSON.stringify({ isActive: !company.isActive }) },
+      company.isActive
+        ? `${company.name} marked as a past employer.`
+        : `${company.name} reactivated.`,
+    );
+  }
+
+  async function deleteCompany(company: Company) {
+    if (!window.confirm(`Delete ${company.name}?`)) return;
+    await mutate(
+      `/api/companies/${company.id}`,
+      { method: "DELETE" },
+      `${company.name} deleted.`,
     );
   }
 
@@ -496,6 +564,113 @@ export default function SettingsPage() {
                   ) : null}
                 </TableBody>
               </Table>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Companies</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Where each person earns. Paychecks are recorded against a company,
+                so someone working two jobs gets two paychecks a month. Left a job?
+                Mark it past — the pay history stays.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {people.map((person) => {
+                const owned = companies.filter(
+                  (company) => company.personId === person.id,
+                );
+
+                return (
+                  <div key={person.id} className="space-y-3 rounded-xl border p-4">
+                    <p className="font-medium">{person.name}</p>
+
+                    {owned.length > 0 ? (
+                      <div className="space-y-2">
+                        {owned.map((company) => (
+                          <div
+                            key={company.id}
+                            className="flex flex-wrap items-center gap-2"
+                          >
+                            <Input
+                              className="max-w-xs"
+                              value={companyNames[company.id] ?? company.name}
+                              onChange={(event) =>
+                                setCompanyNames({
+                                  ...companyNames,
+                                  [company.id]: event.target.value,
+                                })
+                              }
+                            />
+                            <Badge
+                              variant={company.isActive ? "success" : "secondary"}
+                            >
+                              {company.isActive ? "current" : "past"}
+                            </Badge>
+                            <span className="ml-auto flex gap-2">
+                              <Button
+                                size="sm"
+                                disabled={saving}
+                                onClick={() => renameCompany(company)}
+                              >
+                                Rename
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={saving}
+                                onClick={() => toggleCompany(company)}
+                              >
+                                {company.isActive ? "Mark past" : "Reactivate"}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label={`Delete ${company.name}`}
+                                disabled={saving}
+                                onClick={() => deleteCompany(company)}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        No companies yet for {person.name}.
+                      </p>
+                    )}
+
+                    <div className="flex flex-wrap gap-2">
+                      <Input
+                        className="max-w-xs"
+                        placeholder={`Add a company for ${person.name}`}
+                        value={newCompany[person.id] ?? ""}
+                        onChange={(event) =>
+                          setNewCompany({
+                            ...newCompany,
+                            [person.id]: event.target.value,
+                          })
+                        }
+                      />
+                      <Button
+                        variant="outline"
+                        disabled={saving || !(newCompany[person.id] ?? "").trim()}
+                        onClick={() => addCompany(person)}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+              {people.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Add a person first, then give them companies.
+                </p>
+              ) : null}
             </CardContent>
           </Card>
 

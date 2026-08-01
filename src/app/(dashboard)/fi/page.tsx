@@ -8,7 +8,7 @@ import {
   SimpleLineChart,
   StatCard,
 } from "@/components/charts/dashboard-charts";
-import { formatCurrency, formatPercent } from "@/lib/utils";
+import { formatCurrency, formatMonthLabel, formatPercent } from "@/lib/utils";
 
 type FiData = {
   annualSpending: number;
@@ -105,6 +105,7 @@ export default function FiPage() {
                 { key: "progress", color: SERIES_COLORS[0], name: "Progress %" },
               ]}
               valueFormat="percent"
+              xTickFormatter={formatMonthLabel}
             />
           </CardContent>
         </Card>
@@ -121,6 +122,7 @@ export default function FiPage() {
                 { key: "investments", color: SERIES_COLORS[0], name: "Investments" },
                 { key: "fiNumber", color: SERIES_COLORS[1], name: "FI Number" },
               ]}
+              xTickFormatter={formatMonthLabel}
             />
           </CardContent>
         </Card>

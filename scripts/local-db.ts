@@ -10,6 +10,7 @@
  * DATABASE_URL in .env.example, so no extra configuration is needed.
  */
 import { existsSync, rmSync } from "node:fs";
+import { createConnection } from "node:net";
 import { resolve } from "node:path";
 import EmbeddedPostgres from "embedded-postgres";
 
@@ -31,7 +32,34 @@ function createServer() {
   });
 }
 
+/** True if something already answers on the port. */
+function portInUse(port: number) {
+  return new Promise<boolean>((resolvePort) => {
+    const socket = createConnection({ host: "127.0.0.1", port });
+    const settle = (result: boolean) => {
+      socket.destroy();
+      resolvePort(result);
+    };
+    socket.setTimeout(1000);
+    socket.once("connect", () => settle(true));
+    socket.once("timeout", () => settle(false));
+    socket.once("error", () => settle(false));
+  });
+}
+
 async function start() {
+  // Postgres itself reports a bind failure only in its log, which leaves this
+  // script exiting with a bare "undefined". Check first and say so plainly.
+  if (await portInUse(PORT)) {
+    throw new Error(
+      `Port ${PORT} is already in use — something else (another copy of this ` +
+        "script, Postgres.app, Docker) is listening there.\n\n" +
+        "Either stop it, or run on a different port:\n" +
+        `  LOCAL_DB_PORT=5433 npm run db:local\n` +
+        "and set DATABASE_URL in .env to match.",
+    );
+  }
+
   const fresh = !existsSync(DATA_DIR);
   const server = createServer();
 

@@ -13,6 +13,13 @@ import {
   type PersonFilter,
   type SplitRow,
 } from "@/lib/splits";
+import {
+  addPaychecks,
+  emptyPaycheck,
+  monthlySavings,
+  netIncome,
+  type Paycheck,
+} from "@/lib/income";
 import type { Prisma } from "@/generated/prisma/client";
 
 export type { PersonFilter };
@@ -95,6 +102,10 @@ function buildTransactionWhere(filters: DashboardFilters): Prisma.TransactionWhe
   }
 
   return where;
+}
+
+function monthKey(date: Date) {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 export async function getActivePeople() {
@@ -273,11 +284,25 @@ export async function getIncomeDashboard(filters: DashboardFilters = {}) {
     where.personId = filters.person;
   }
 
-  const [income, spending] = await Promise.all([
+  const paycheckWhere: Prisma.MonthlyIncomeWhereInput = {};
+  if (filters.startDate || filters.endDate) {
+    paycheckWhere.month = {};
+    if (filters.startDate) paycheckWhere.month.gte = filters.startDate;
+    if (filters.endDate) paycheckWhere.month.lte = filters.endDate;
+  }
+  if (filters.person && filters.person !== "COMBINED") {
+    paycheckWhere.personId = filters.person;
+  }
+
+  const [income, paychecks, spending] = await Promise.all([
     db.income.findMany({
       where,
       include: { person: true },
       orderBy: { date: "desc" },
+    }),
+    db.monthlyIncome.findMany({
+      where: paycheckWhere,
+      include: { person: { select: { name: true } } },
     }),
     getSpendingDashboard(filters),
   ]);
@@ -285,10 +310,25 @@ export async function getIncomeDashboard(filters: DashboardFilters = {}) {
   const monthlyMap = new Map<string, number>();
   const personMap = new Map<string, number>();
 
+  // Paycheck net plus ad-hoc income: what actually arrived, from both sources.
+  for (const entry of paychecks) {
+    const net = netIncome({
+      grossIncome: Number(entry.grossIncome),
+      medical: Number(entry.medical),
+      dentalVision: Number(entry.dentalVision),
+      retirement401k: Number(entry.retirement401k),
+      hsa: Number(entry.hsa),
+      taxes: Number(entry.taxes),
+    });
+    const key = monthKey(entry.month);
+    monthlyMap.set(key, (monthlyMap.get(key) ?? 0) + net);
+    personMap.set(entry.person.name, (personMap.get(entry.person.name) ?? 0) + net);
+  }
+
   for (const entry of income) {
     const amount = Number(entry.amount);
-    const monthKey = `${entry.date.getUTCFullYear()}-${String(entry.date.getUTCMonth() + 1).padStart(2, "0")}`;
-    monthlyMap.set(monthKey, (monthlyMap.get(monthKey) ?? 0) + amount);
+    const key = monthKey(entry.date);
+    monthlyMap.set(key, (monthlyMap.get(key) ?? 0) + amount);
     personMap.set(entry.person.name, (personMap.get(entry.person.name) ?? 0) + amount);
   }
 
@@ -302,7 +342,10 @@ export async function getIncomeDashboard(filters: DashboardFilters = {}) {
     annualMap.set(year, (annualMap.get(year) ?? 0) + item.total);
   }
 
-  const totalIncome = income.reduce((sum, entry) => sum + Number(entry.amount), 0);
+  const totalIncome = Array.from(monthlyMap.values()).reduce(
+    (sum, value) => sum + value,
+    0,
+  );
 
   // Compare across every month that has either income or spending, so a month
   // with expenses and no income still shows up.
@@ -440,6 +483,110 @@ export async function getFiDashboard() {
     history,
     excludedCategories: excludedCategories.length,
   };
+}
+
+/**
+ * Month-by-month cash flow. Expenses come from the transaction splits, so a
+ * person filter shows their share; paychecks and other income are filtered by
+ * whose they are.
+ */
+export async function getCashFlow(person: PersonFilter = "COMBINED") {
+  const [transactions, people, paychecks, otherIncome] = await Promise.all([
+    getTransactionsWithDetails({}),
+    getActivePeople(),
+    db.monthlyIncome.findMany({
+      where: person === "COMBINED" ? {} : { personId: person },
+    }),
+    db.income.findMany({
+      where: person === "COMBINED" ? {} : { personId: person },
+      select: { date: true, amount: true },
+    }),
+  ]);
+
+  const activePersonIds = people.map((entry) => entry.id);
+  const mapped = mapTransactionAmounts(transactions, activePersonIds, person);
+
+  const expensesByMonth = new Map<string, number>();
+  const categoriesByMonth = new Map<string, Map<string, number>>();
+
+  for (const transaction of mapped) {
+    const key = monthKey(transaction.date);
+    expensesByMonth.set(
+      key,
+      (expensesByMonth.get(key) ?? 0) + transaction.filteredAmount,
+    );
+
+    const categories = categoriesByMonth.get(key) ?? new Map<string, number>();
+    const name = transaction.category?.name ?? "Uncategorized";
+    categories.set(name, (categories.get(name) ?? 0) + transaction.filteredAmount);
+    categoriesByMonth.set(key, categories);
+  }
+
+  const paychecksByMonth = new Map<string, Paycheck>();
+  for (const entry of paychecks) {
+    const key = monthKey(entry.month);
+    paychecksByMonth.set(
+      key,
+      addPaychecks(paychecksByMonth.get(key) ?? emptyPaycheck(), {
+        grossIncome: Number(entry.grossIncome),
+        medical: Number(entry.medical),
+        dentalVision: Number(entry.dentalVision),
+        retirement401k: Number(entry.retirement401k),
+        hsa: Number(entry.hsa),
+        taxes: Number(entry.taxes),
+      }),
+    );
+  }
+
+  const otherByMonth = new Map<string, number>();
+  for (const entry of otherIncome) {
+    const key = monthKey(entry.date);
+    otherByMonth.set(key, (otherByMonth.get(key) ?? 0) + Number(entry.amount));
+  }
+
+  const months = Array.from(
+    new Set([
+      ...expensesByMonth.keys(),
+      ...paychecksByMonth.keys(),
+      ...otherByMonth.keys(),
+    ]),
+  ).sort((a, b) => b.localeCompare(a));
+
+  const rows = months.map((month) => {
+    const paycheck = paychecksByMonth.get(month) ?? emptyPaycheck();
+    const other = otherByMonth.get(month) ?? 0;
+    const expenses = expensesByMonth.get(month) ?? 0;
+    const net = netIncome(paycheck) + other;
+
+    return {
+      month,
+      grossIncome: paycheck.grossIncome,
+      otherIncome: other,
+      netIncome: net,
+      expenses,
+      retirement401k: paycheck.retirement401k,
+      hsa: paycheck.hsa,
+      taxes: paycheck.taxes,
+      medical: paycheck.medical,
+      dentalVision: paycheck.dentalVision,
+      savings: monthlySavings(paycheck, other, expenses),
+      categories: Array.from(categoriesByMonth.get(month) ?? [])
+        .map(([name, total]) => ({ name, total }))
+        .sort((a, b) => b.total - a.total),
+      hasPaycheck: paychecksByMonth.has(month),
+    };
+  });
+
+  const totals = rows.reduce(
+    (sum, row) => ({
+      netIncome: sum.netIncome + row.netIncome,
+      expenses: sum.expenses + row.expenses,
+      savings: sum.savings + row.savings,
+    }),
+    { netIncome: 0, expenses: 0, savings: 0 },
+  );
+
+  return { rows, totals };
 }
 
 export async function upsertTags(tagNames: string[]) {

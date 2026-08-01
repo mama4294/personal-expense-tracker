@@ -69,6 +69,7 @@ export function SimpleBarChart({
   yKey,
   valueFormat = "currency",
   name,
+  xTickFormatter,
   onSelect,
   selected,
 }: {
@@ -77,6 +78,8 @@ export function SimpleBarChart({
   yKey: string;
   valueFormat?: ValueFormat;
   name?: string;
+  /** Formats the x-axis labels without changing the underlying data keys. */
+  xTickFormatter?: (value: string) => string;
   /** Makes bars clickable; receives the category/account label that was hit. */
   onSelect?: (label: string) => void;
   selected?: string | null;
@@ -87,6 +90,7 @@ export function SimpleBarChart({
         <CartesianGrid stroke={GRID_COLOR} vertical={false} />
         <XAxis
           dataKey={xKey}
+          tickFormatter={xTickFormatter}
           tick={{ fontSize: 12, fill: TICK_COLOR }}
           stroke={AXIS_COLOR}
         />
@@ -99,6 +103,9 @@ export function SimpleBarChart({
           contentStyle={tooltipStyle}
           cursor={{ fill: "rgba(15, 23, 42, 0.04)" }}
           formatter={(value) => formatValue(Number(value), valueFormat)}
+          labelFormatter={(label) =>
+            xTickFormatter ? xTickFormatter(String(label)) : String(label)
+          }
         />
         <Bar
           dataKey={yKey}
@@ -146,11 +153,14 @@ export function SimpleLineChart({
   xKey,
   lines,
   valueFormat = "currency",
+  xTickFormatter,
 }: {
   data: Record<string, string | number>[];
   xKey: string;
   lines: { key: string; color: string; name: string }[];
   valueFormat?: ValueFormat;
+  /** Formats the x-axis labels without changing the underlying data keys. */
+  xTickFormatter?: (value: string) => string;
 }) {
   return (
     <ResponsiveContainer width="100%" height={320}>
@@ -158,6 +168,7 @@ export function SimpleLineChart({
         <CartesianGrid stroke={GRID_COLOR} vertical={false} />
         <XAxis
           dataKey={xKey}
+          tickFormatter={xTickFormatter}
           tick={{ fontSize: 12, fill: TICK_COLOR }}
           stroke={AXIS_COLOR}
         />
@@ -169,6 +180,9 @@ export function SimpleLineChart({
         <Tooltip
           contentStyle={tooltipStyle}
           formatter={(value) => formatValue(Number(value), valueFormat)}
+          labelFormatter={(label) =>
+            xTickFormatter ? xTickFormatter(String(label)) : String(label)
+          }
         />
         {/* A single series is named by the card title; a legend would be noise. */}
         {lines.length > 1 ? <Legend iconType="circle" /> : null}

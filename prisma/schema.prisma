@@ -21,6 +21,7 @@ enum AssetType {
 enum LiabilityType {
   MORTGAGE
   CAR_LOAN
+  CREDIT_CARD
 }
 
 /// A login. Separate from Person: one household login can cover several people.
@@ -45,8 +46,55 @@ model Person {
   accountSplits     AccountSplit[]
   transactionSplits TransactionSplit[]
   income            Income[]
+  netWorthBalances  NetWorthBalance[]
+  monthlyIncome     MonthlyIncome[]
+  companies         Company[]
 
   @@index([isActive])
+}
+
+/// Somewhere a person earns money. One person can hold several at once, so a
+/// paycheck names the company it came from.
+model Company {
+  id            String          @id @default(cuid())
+  name          String
+  personId      String
+  person        Person          @relation(fields: [personId], references: [id], onDelete: Cascade)
+  isActive      Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  monthlyIncome MonthlyIncome[]
+
+  /// Two people may both work somewhere called "Meta"; one person may not.
+  @@unique([personId, name])
+  @@index([personId])
+}
+
+/// A person's paycheck detail for one month: what they earned gross and where
+/// it went before it hit the bank. Net income is derived, never stored.
+model MonthlyIncome {
+  id             String   @id @default(cuid())
+  month          DateTime @db.Date
+  personId       String
+  person         Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+  /// Null for paychecks recorded before any company was set up.
+  companyId      String?
+  company        Company? @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  annualSalary   Decimal  @default(0) @db.Decimal(12, 2)
+  grossIncome    Decimal  @default(0) @db.Decimal(12, 2)
+  medical        Decimal  @default(0) @db.Decimal(12, 2)
+  dentalVision   Decimal  @default(0) @db.Decimal(12, 2)
+  retirement401k Decimal  @default(0) @db.Decimal(12, 2)
+  hsa            Decimal  @default(0) @db.Decimal(12, 2)
+  taxes          Decimal  @default(0) @db.Decimal(12, 2)
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  /// One paycheck per company per month — a second job is a second row.
+  @@unique([month, personId, companyId])
+  @@index([month])
+  @@index([companyId])
 }
 
 model Account {
@@ -161,8 +209,12 @@ model NetWorthBalance {
   assetType     AssetType?
   liabilityType LiabilityType?
   amount        Decimal          @db.Decimal(14, 2)
+  /// Whose account this is. Null means it belongs to the household jointly.
+  personId      String?
+  person        Person?          @relation(fields: [personId], references: [id], onDelete: Restrict)
 
   @@index([snapshotId])
+  @@index([personId])
 }
 
 model AppSettings {

@@ -56,16 +56,23 @@ export async function DELETE(
 
   // Removing a person who owns history would silently rewrite past splits, so
   // deletion is only offered while they are unreferenced.
-  const [transactionSplits, accountSplits, income] = await Promise.all([
-    db.transactionSplit.count({ where: { personId: id } }),
-    db.accountSplit.count({ where: { personId: id } }),
-    db.income.count({ where: { personId: id } }),
-  ]);
+  // Paychecks, net worth balances and companies all cascade on delete, so they
+  // have to be counted here or a person's whole pay history vanishes silently.
+  const [transactionSplits, accountSplits, income, paychecks, balances, companies] =
+    await Promise.all([
+      db.transactionSplit.count({ where: { personId: id } }),
+      db.accountSplit.count({ where: { personId: id } }),
+      db.income.count({ where: { personId: id } }),
+      db.monthlyIncome.count({ where: { personId: id } }),
+      db.netWorthBalance.count({ where: { personId: id } }),
+      db.company.count({ where: { personId: id } }),
+    ]);
 
-  const references = transactionSplits + accountSplits + income;
+  const references =
+    transactionSplits + accountSplits + income + paychecks + balances + companies;
   if (references > 0) {
     return jsonError(
-      "This person is referenced by existing accounts, transactions, or income. Deactivate them instead to keep the history intact.",
+      "This person is referenced by existing accounts, transactions, income, paychecks, companies, or net worth balances. Deactivate them instead to keep the history intact.",
       409,
     );
   }
