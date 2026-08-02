@@ -5,6 +5,7 @@ import { z } from "zod";
 
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
+  nickname: z.string().nullish(),
   splits: z
     .array(
       z.object({
@@ -39,6 +40,10 @@ export async function PATCH(
       where: { id },
       data: {
         name: parsed.data.name?.trim(),
+        // Undefined leaves it alone; an empty string clears it back to name.
+        ...(parsed.data.nickname === undefined
+          ? {}
+          : { nickname: parsed.data.nickname?.trim() || null }),
         ...(splits
           ? { splits: { deleteMany: {}, create: splits } }
           : {}),

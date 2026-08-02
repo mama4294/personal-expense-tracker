@@ -20,6 +20,7 @@ import {
   netIncome,
   type Paycheck,
 } from "@/lib/income";
+import { accountLabel } from "@/lib/utils";
 import type { Prisma } from "@/generated/prisma/client";
 
 export type { PersonFilter };
@@ -185,7 +186,11 @@ export async function getTransactionList(filters: DashboardFilters = {}) {
       isManual: transaction.isManual,
       hasOverride: transaction.hasOverride,
       account: transaction.account
-        ? { id: transaction.account.id, name: transaction.account.name }
+        ? {
+            id: transaction.account.id,
+            name: transaction.account.name,
+            nickname: transaction.account.nickname,
+          }
         : null,
       category: transaction.category
         ? { id: transaction.category.id, name: transaction.category.name }
@@ -227,7 +232,8 @@ export async function getSpendingDashboard(filters: DashboardFilters = {}) {
       (categoryMap.get(categoryName) ?? 0) + transaction.filteredAmount,
     );
 
-    const accountName = transaction.account?.name ?? "Manual";
+    // The chart is labelled the way the account is labelled everywhere else.
+    const accountName = accountLabel(transaction.account);
     accountMap.set(
       accountName,
       (accountMap.get(accountName) ?? 0) + transaction.filteredAmount,

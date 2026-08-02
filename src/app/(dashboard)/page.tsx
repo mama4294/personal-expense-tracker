@@ -39,6 +39,7 @@ import {
 import type { Person } from "@/components/people/split-editor";
 import { personColor } from "@/lib/colors";
 import {
+  accountLabel,
   formatCurrency,
   formatCurrencyPrecise,
   formatMonthLabel,
@@ -58,6 +59,7 @@ type SpendingData = {
 };
 
 type Option = { id: string; name: string };
+type AccountOption = Option & { nickname: string | null };
 
 type Filters = {
   person: string;
@@ -96,7 +98,7 @@ export default function SpendingPage() {
   const [data, setData] = useState<SpendingData | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Option[]>([]);
-  const [accounts, setAccounts] = useState<Option[]>([]);
+  const [accounts, setAccounts] = useState<AccountOption[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
@@ -110,6 +112,9 @@ export default function SpendingPage() {
 
   const selectedCategory = categories.find(
     (category) => category.id === filters.categoryId,
+  );
+  const selectedAccount = accounts.find(
+    (account) => account.id === filters.accountId,
   );
 
   /** Charts follow whoever is selected; Combined keeps the default blue. */
@@ -181,8 +186,10 @@ export default function SpendingPage() {
     }));
   }
 
-  function selectAccount(name: string) {
-    const account = accounts.find((item) => item.name === name);
+  function selectAccount(label: string) {
+    // The chart is labelled with nicknames, so match on the same label rather
+    // than the CSV name.
+    const account = accounts.find((item) => accountLabel(item) === label);
     if (!account) return;
 
     setFilters((current) => ({
@@ -213,7 +220,7 @@ export default function SpendingPage() {
   }
   if (filters.accountId) {
     chips.push({
-      label: `Account: ${accounts.find((a) => a.id === filters.accountId)?.name ?? ""}`,
+      label: `Account: ${accountLabel(selectedAccount)}`,
       clear: () => setFilters({ ...filters, accountId: "" }),
     });
   }
@@ -300,7 +307,7 @@ export default function SpendingPage() {
                     <SelectItem value="all">All accounts</SelectItem>
                     {accounts.map((account) => (
                       <SelectItem key={account.id} value={account.id}>
-                        {account.name}
+                        {accountLabel(account)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -450,10 +457,7 @@ export default function SpendingPage() {
               name="Spending"
               color={activeColor}
               onSelect={selectAccount}
-              selected={
-                accounts.find((account) => account.id === filters.accountId)?.name ??
-                null
-              }
+              selected={selectedAccount ? accountLabel(selectedAccount) : null}
             />
           </CardContent>
         </Card>

@@ -102,7 +102,10 @@ model MonthlyIncome {
 
 model Account {
   id           String         @id @default(cuid())
+  /// Must match the CSV export exactly; import relies on it.
   name         String         @unique
+  /// Friendly label shown in tables and charts. Falls back to name.
+  nickname     String?
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
   splits       AccountSplit[]

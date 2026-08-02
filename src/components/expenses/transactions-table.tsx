@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -36,7 +36,7 @@ import {
   type Person,
   type SplitRow,
 } from "@/components/people/split-editor";
-import { formatCurrencyPrecise } from "@/lib/utils";
+import { accountLabel, cn, formatCurrencyPrecise } from "@/lib/utils";
 
 export type Transaction = {
   id: string;
@@ -46,7 +46,7 @@ export type Transaction = {
   amount: number;
   isManual: boolean;
   hasOverride: boolean;
-  account: { id: string; name: string } | null;
+  account: { id: string; name: string; nickname: string | null } | null;
   category: { id: string; name: string } | null;
   tags: string[];
   splits: SplitRow[];
@@ -56,6 +56,46 @@ export type Transaction = {
 };
 
 type Option = { id: string; name: string };
+
+/** Columns worth ordering by; the rest are free text or derived. */
+type SortKey = "date" | "amount" | "account";
+type Sort = { key: SortKey; dir: "asc" | "desc" };
+
+function SortableHead({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  align,
+}: {
+  label: string;
+  sortKey: SortKey;
+  sort: Sort;
+  onSort: (key: SortKey) => void;
+  align?: "right";
+}) {
+  const active = sort.key === sortKey;
+  const Icon = !active ? ArrowUpDown : sort.dir === "asc" ? ArrowUp : ArrowDown;
+
+  return (
+    <TableHead className={align === "right" ? "text-right" : undefined}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        aria-label={`Sort by ${label}`}
+        className={cn(
+          "inline-flex items-center gap-1 rounded hover:text-foreground",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          active ? "text-foreground" : "text-muted-foreground",
+          align === "right" && "flex-row-reverse",
+        )}
+      >
+        {label}
+        <Icon className="h-3.5 w-3.5" />
+      </button>
+    </TableHead>
+  );
+}
 
 type EditState = {
   id: string;
@@ -82,8 +122,38 @@ export function TransactionsTable({
 }) {
   const [editing, setEditing] = useState<EditState | null>(null);
   const [saving, setSaving] = useState(false);
+  const [sort, setSort] = useState<Sort>({ key: "date", dir: "desc" });
 
   const activePeople = people.filter((person) => person.isActive);
+
+  function toggleSort(key: SortKey) {
+    setSort((current) =>
+      current.key === key
+        ? { key, dir: current.dir === "asc" ? "desc" : "asc" }
+        : // Money and dates are most useful biggest-first; names read A-Z.
+          { key, dir: key === "account" ? "asc" : "desc" },
+    );
+  }
+
+  const sorted = useMemo(() => {
+    const direction = sort.dir === "asc" ? 1 : -1;
+    // Newest-first within a group keeps re-sorts from shuffling equal rows.
+    const byDate = (a: Transaction, b: Transaction) =>
+      b.date.localeCompare(a.date);
+
+    return [...transactions].sort((a, b) => {
+      if (sort.key === "amount") {
+        return (a.amount - b.amount) * direction || byDate(a, b);
+      }
+      if (sort.key === "account") {
+        return (
+          accountLabel(a.account).localeCompare(accountLabel(b.account)) *
+            direction || byDate(a, b)
+        );
+      }
+      return a.date.localeCompare(b.date) * direction;
+    });
+  }, [transactions, sort]);
 
   async function saveEdit() {
     if (!editing) return;
@@ -147,22 +217,38 @@ export function TransactionsTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Date</TableHead>
+            <SortableHead
+              label="Date"
+              sortKey="date"
+              sort={sort}
+              onSort={toggleSort}
+            />
             <TableHead>Description</TableHead>
             <TableHead>Category</TableHead>
-            <TableHead>Account</TableHead>
+            <SortableHead
+              label="Account"
+              sortKey="account"
+              sort={sort}
+              onSort={toggleSort}
+            />
             <TableHead>Split</TableHead>
             {activePeople.map((person) => (
               <TableHead key={person.id} className="text-right">
                 {person.name}
               </TableHead>
             ))}
-            <TableHead className="text-right">Amount</TableHead>
+            <SortableHead
+              label="Amount"
+              sortKey="amount"
+              sort={sort}
+              onSort={toggleSort}
+              align="right"
+            />
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {transactions.map((transaction) => (
+          {sorted.map((transaction) => (
             <TableRow key={transaction.id}>
               <TableCell className="whitespace-nowrap">
                 {transaction.date.slice(0, 10)}
@@ -183,7 +269,7 @@ export function TransactionsTable({
                 ) : null}
               </TableCell>
               <TableCell>{transaction.category?.name ?? "—"}</TableCell>
-              <TableCell>{transaction.account?.name ?? "Manual"}</TableCell>
+              <TableCell>{accountLabel(transaction.account)}</TableCell>
               <TableCell className="whitespace-nowrap">
                 {describeSplitRows(transaction.splits, people)}
                 {transaction.hasOverride ? (

@@ -38,8 +38,14 @@ import {
   type SplitRow,
 } from "@/components/people/split-editor";
 import { colorLabel, personColor } from "@/lib/colors";
+import { accountLabel } from "@/lib/utils";
 
-type Account = { id: string; name: string; splits: SplitRow[] };
+type Account = {
+  id: string;
+  name: string;
+  nickname: string | null;
+  splits: SplitRow[];
+};
 type Category = { id: string; name: string; excludedFromFi: boolean };
 type Login = { id: string; username: string; name: string; createdAt: string };
 type Company = {
@@ -428,7 +434,8 @@ export default function SettingsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
+                    <TableHead>Nickname</TableHead>
+                    <TableHead>CSV Name</TableHead>
                     <TableHead>Split</TableHead>
                     <TableHead>Shares</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -437,7 +444,12 @@ export default function SettingsPage() {
                 <TableBody>
                   {accounts.map((account) => (
                     <TableRow key={account.id}>
-                      <TableCell className="font-medium">{account.name}</TableCell>
+                      <TableCell className="font-medium">
+                        {accountLabel(account)}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {account.name}
+                      </TableCell>
                       <TableCell>
                         {describeSplitRows(account.splits, people)}
                       </TableCell>
@@ -461,7 +473,7 @@ export default function SettingsPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <RowActions
-                          label={`Actions for ${account.name}`}
+                          label={`Actions for ${accountLabel(account)}`}
                           disabled={saving}
                         >
                           <DropdownMenuItem

@@ -127,16 +127,27 @@ async function main() {
 
   // --- accounts, covering every ownership shape ----------------------------
   const accountSpecs = [
-    { name: "Checking - 1234", splits: [{ personId: alex.id, percent: 100 }] },
-    { name: "Credit Card - 5678", splits: [{ personId: sam.id, percent: 100 }] },
+    {
+      name: "Checking - 1234",
+      nickname: "Everyday Checking",
+      splits: [{ personId: alex.id, percent: 100 }],
+    },
+    {
+      name: "Credit Card - 5678",
+      nickname: "Sam's Amex",
+      splits: [{ personId: sam.id, percent: 100 }],
+    },
     {
       name: "Shared Visa - 9012",
+      nickname: "Joint Card",
       splits: [
         { personId: alex.id, percent: 50 },
         { personId: sam.id, percent: 50 },
       ],
     },
     {
+      // Left without a nickname on purpose, so the fallback to the CSV name is
+      // visible in the demo too.
       name: "Travel Card - 3456",
       splits: [
         { personId: alex.id, percent: 60 },
@@ -149,8 +160,12 @@ async function main() {
   for (const spec of accountSpecs) {
     const account = await db.account.upsert({
       where: { name: spec.name },
-      update: {},
-      create: { name: spec.name, splits: { create: spec.splits } },
+      update: { nickname: "nickname" in spec ? spec.nickname : null },
+      create: {
+        name: spec.name,
+        nickname: "nickname" in spec ? spec.nickname : null,
+        splits: { create: spec.splits },
+      },
     });
     accounts.push(account);
   }

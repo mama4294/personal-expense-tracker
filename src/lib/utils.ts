@@ -125,6 +125,19 @@ export const LIABILITY_LABELS: Record<string, string> = {
   CREDIT_CARD: "Credit Card",
 };
 
+/**
+ * What to call an account on screen. `name` has to match the CSV export exactly
+ * for import to work, which makes it a poor label; the nickname is what the
+ * household actually calls it.
+ */
+export function accountLabel(
+  account: { name: string; nickname?: string | null } | null | undefined,
+): string {
+  if (!account) return "Manual";
+  const nickname = account.nickname?.trim();
+  return nickname ? nickname : account.name;
+}
+
 export const INVESTMENT_ASSETS = [
   "BROKERAGE",
   "RSU",

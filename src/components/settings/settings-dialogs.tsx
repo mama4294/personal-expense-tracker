@@ -250,11 +250,21 @@ export function AccountDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  account: { id: string; name: string; splits: SplitRow[] } | null;
+  account: {
+    id: string;
+    name: string;
+    nickname: string | null;
+    splits: SplitRow[];
+  } | null;
   people: Person[];
-  onSave: (values: { name: string; splits: SplitRow[] }) => Promise<SaveResult>;
+  onSave: (values: {
+    name: string;
+    nickname: string;
+    splits: SplitRow[];
+  }) => Promise<SaveResult>;
 }) {
   const [name, setName] = useState("");
+  const [nickname, setNickname] = useState("");
   const [splits, setSplits] = useState<SplitRow[]>([]);
   const [seeded, setSeeded] = useState<string | null>(null);
 
@@ -262,6 +272,7 @@ export function AccountDialog({
   if (open && seeded !== key) {
     setSeeded(key);
     setName(account?.name ?? "");
+    setNickname(account?.nickname ?? "");
     setSplits(account?.splits?.length ? account.splits : evenSplit(people));
   }
   if (!open && seeded !== null) setSeeded(null);
@@ -273,13 +284,14 @@ export function AccountDialog({
       open={open}
       onOpenChange={onOpenChange}
       title={account ? "Edit Account" : "Add Account"}
-      description="Name it exactly as it appears in your CSV exports."
+      description="The name must match your CSV exports exactly. The nickname is what you'll see on tables and charts."
       submitLabel={account ? "Save Changes" : "Add Account"}
       canSubmit={name.trim().length > 0 && balanced}
       wide
       onSubmit={() =>
         onSave({
           name: name.trim(),
+          nickname: nickname.trim(),
           splits: splits.filter((split) => split.percent > 0),
         })
       }
@@ -293,6 +305,18 @@ export function AccountDialog({
           onChange={(event) => setName(event.target.value)}
           autoFocus
         />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="account-nickname">Nickname</Label>
+        <Input
+          id="account-nickname"
+          placeholder={name.trim() || "Joint Card"}
+          value={nickname}
+          onChange={(event) => setNickname(event.target.value)}
+        />
+        <p className="text-xs text-muted-foreground">
+          Optional. Leave blank to keep using the name above.
+        </p>
       </div>
       <div className="space-y-2">
         <Label>Default split</Label>

@@ -26,9 +26,10 @@ import {
   type Person,
   type SplitRow,
 } from "@/components/people/split-editor";
-import { toDateInputValue } from "@/lib/utils";
+import { accountLabel, toDateInputValue } from "@/lib/utils";
 
 type Option = { id: string; name: string };
+type AccountOption = Option & { nickname?: string | null };
 
 function blankForm() {
   return {
@@ -55,7 +56,7 @@ export function ExpenseDialog({
   onOpenChange: (open: boolean) => void;
   people: Person[];
   categories: Option[];
-  accounts: Option[];
+  accounts: AccountOption[];
   onSaved: () => void | Promise<void>;
 }) {
   const [form, setForm] = useState(blankForm);
@@ -180,7 +181,7 @@ export function ExpenseDialog({
                 <SelectItem value="none">No account</SelectItem>
                 {accounts.map((account) => (
                   <SelectItem key={account.id} value={account.id}>
-                    {account.name}
+                    {accountLabel(account)}
                   </SelectItem>
                 ))}
               </SelectContent>

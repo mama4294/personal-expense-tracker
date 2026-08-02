@@ -5,6 +5,7 @@ import { z } from "zod";
 
 const accountSchema = z.object({
   name: z.string().min(1),
+  nickname: z.string().nullish(),
   splits: z
     .array(
       z.object({
@@ -45,6 +46,7 @@ export async function POST(request: Request) {
     const account = await db.account.create({
       data: {
         name: parsed.data.name.trim(),
+        nickname: parsed.data.nickname?.trim() || null,
         splits: { create: splits },
       },
       include: { splits: true },
