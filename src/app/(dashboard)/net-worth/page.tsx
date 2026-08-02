@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import { PersonToggle } from "@/components/filters/person-toggle";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ import {
   rowsFromSnapshot,
   type BalanceRow,
 } from "@/components/net-worth/net-worth-dialog";
+import { personColor } from "@/lib/colors";
 import {
   ASSET_LABELS,
   formatCurrency,
@@ -38,7 +39,7 @@ import {
   LIABILITY_LABELS,
 } from "@/lib/utils";
 
-type Person = { id: string; name: string; isActive: boolean };
+type Person = { id: string; name: string; isActive: boolean; color: string };
 
 type Balance = {
   id: string;
@@ -93,7 +94,10 @@ export default function NetWorthPage() {
     null,
   );
 
-  const activePeople = people.filter((person) => person.isActive);
+  const activePeople = people.filter((entry) => entry.isActive);
+  const activeColor = personColor(
+    activePeople.find((entry) => entry.id === person)?.color,
+  );
 
   const load = useCallback(async () => {
     const [dashboardResponse, snapshotResponse, peopleResponse] = await Promise.all([
@@ -260,7 +264,7 @@ export default function NetWorthPage() {
               data={data?.timeline ?? []}
               xKey="month"
               lines={[
-                { key: "netWorth", color: SERIES_COLORS[0], name: "Net Worth" },
+                { key: "netWorth", color: activeColor, name: "Net Worth" },
               ]}
               xTickFormatter={formatMonthLabel}
             />
@@ -284,7 +288,7 @@ export default function NetWorthPage() {
             <SimpleLineChart
               data={data?.timeline ?? []}
               xKey="month"
-              lines={[{ key: "assets", color: SERIES_COLORS[0], name: "Assets" }]}
+              lines={[{ key: "assets", color: activeColor, name: "Assets" }]}
               xTickFormatter={formatMonthLabel}
             />
           </CardContent>
@@ -334,8 +338,8 @@ export default function NetWorthPage() {
                 const open = expanded === key;
 
                 return (
-                  <>
-                    <TableRow key={snapshot.id}>
+                  <Fragment key={snapshot.id}>
+                    <TableRow>
                       <TableCell className="whitespace-nowrap">
                         <button
                           type="button"
@@ -366,7 +370,7 @@ export default function NetWorthPage() {
                       </TableCell>
                     </TableRow>
                     {open ? (
-                      <TableRow key={`${snapshot.id}-detail`}>
+                      <TableRow>
                         <TableCell colSpan={6} className="bg-muted/40">
                           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                             {snapshot.balances.map((balance) => (
@@ -401,7 +405,7 @@ export default function NetWorthPage() {
                         </TableCell>
                       </TableRow>
                     ) : null}
-                  </>
+                  </Fragment>
                 );
               })}
               {snapshots.length === 0 ? (

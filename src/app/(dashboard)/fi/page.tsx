@@ -9,6 +9,7 @@ import {
   StatCard,
 } from "@/components/charts/dashboard-charts";
 import { PersonToggle } from "@/components/filters/person-toggle";
+import { personColor } from "@/lib/colors";
 import { formatCurrency, formatMonthLabel, formatPercent } from "@/lib/utils";
 
 type FiData = {
@@ -30,7 +31,7 @@ type FiData = {
   jointInvestments: number;
 };
 
-type Person = { id: string; name: string; isActive: boolean };
+type Person = { id: string; name: string; isActive: boolean; color: string };
 
 export default function FiPage() {
   const [data, setData] = useState<FiData | null>(null);
@@ -38,6 +39,9 @@ export default function FiPage() {
   const [person, setPerson] = useState("COMBINED");
 
   const activePeople = people.filter((entry) => entry.isActive);
+  const activeColor = personColor(
+    activePeople.find((entry) => entry.id === person)?.color,
+  );
 
   const load = useCallback(async () => {
     const [fiResponse, peopleResponse] = await Promise.all([
@@ -134,7 +138,7 @@ export default function FiPage() {
               }))}
               xKey="month"
               lines={[
-                { key: "progress", color: SERIES_COLORS[0], name: "Progress %" },
+                { key: "progress", color: activeColor, name: "Progress %" },
               ]}
               valueFormat="percent"
               xTickFormatter={formatMonthLabel}
@@ -151,7 +155,7 @@ export default function FiPage() {
               data={data?.history ?? []}
               xKey="month"
               lines={[
-                { key: "investments", color: SERIES_COLORS[0], name: "Investments" },
+                { key: "investments", color: activeColor, name: "Investments" },
                 { key: "fiNumber", color: SERIES_COLORS[1], name: "FI Number" },
               ]}
               xTickFormatter={formatMonthLabel}

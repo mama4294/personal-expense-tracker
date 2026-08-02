@@ -114,6 +114,7 @@ function SankeyNode({
   index,
   payload,
   containerWidth,
+  incomeColor,
 }: {
   x: number;
   y: number;
@@ -122,9 +123,14 @@ function SankeyNode({
   index: number;
   payload: Node & { value: number };
   containerWidth: number;
+  /** Recolours the income nodes to match the selected person. */
+  incomeColor?: string;
 }) {
   const isRightSide = x + width + 160 > containerWidth;
-  const fill = TONE_COLORS[payload.tone] ?? SERIES_COLORS[0];
+  const fill =
+    payload.tone === "income"
+      ? (incomeColor ?? TONE_COLORS.income)
+      : (TONE_COLORS[payload.tone] ?? SERIES_COLORS[0]);
 
   return (
     <Layer key={`node-${index}`}>
@@ -153,7 +159,14 @@ function SankeyNode({
   );
 }
 
-export function CashFlowSankey({ data }: { data: SankeyInput }) {
+export function CashFlowSankey({
+  data,
+  incomeColor,
+}: {
+  data: SankeyInput;
+  /** Recolours the income nodes to match the selected person. */
+  incomeColor?: string;
+}) {
   const { nodes, links } = buildSankey(data);
 
   if (links.length === 0) {
@@ -174,7 +187,9 @@ export function CashFlowSankey({ data }: { data: SankeyInput }) {
         link={{ stroke: "#cbd5e1", strokeOpacity: 0.45 }}
         node={
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ((props: any) => <SankeyNode {...props} />) as never
+          ((props: any) => (
+            <SankeyNode {...props} incomeColor={incomeColor} />
+          )) as never
         }
       >
         <Tooltip

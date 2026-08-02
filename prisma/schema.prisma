@@ -40,6 +40,8 @@ model Person {
   name      String   @unique
   isActive  Boolean  @default(true)
   sortOrder Int      @default(0)
+  /// Hex from the curated palette in lib/colors.ts; drives this person's charts.
+  color     String   @default("#2a78d6")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

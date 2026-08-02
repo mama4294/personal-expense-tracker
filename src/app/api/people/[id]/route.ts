@@ -1,10 +1,12 @@
 import { requireAuth, jsonOk, jsonError, jsonDbError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { z } from "zod";
+import { isPersonColor } from "@/lib/colors";
 
 const updateSchema = z.object({
   name: z.string().min(1).max(60).optional(),
   isActive: z.boolean().optional(),
+  color: z.string().refine(isPersonColor, "Pick a colour from the palette.").optional(),
 });
 
 export async function PATCH(

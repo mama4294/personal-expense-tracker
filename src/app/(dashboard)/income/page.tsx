@@ -29,13 +29,14 @@ import {
   type PaycheckDraft,
 } from "@/components/income/paycheck-dialog";
 import { netIncome } from "@/lib/income";
+import { personColor } from "@/lib/colors";
 import {
   formatCurrency,
   formatCurrencyPrecise,
   formatMonthLabel,
 } from "@/lib/utils";
 
-type Person = { id: string; name: string; isActive: boolean };
+type Person = { id: string; name: string; isActive: boolean; color: string };
 
 type IncomeEntry = {
   id: string;
@@ -95,6 +96,9 @@ export default function IncomePage() {
   );
 
   const activePeople = people.filter((person) => person.isActive);
+  const colorByPerson = Object.fromEntries(
+    activePeople.map((entry) => [entry.name, personColor(entry.color)]),
+  );
 
   const load = useCallback(async () => {
     const [
@@ -335,6 +339,7 @@ export default function IncomePage() {
               xKey="name"
               yKey="total"
               name="Income"
+              colorByLabel={colorByPerson}
             />
           </CardContent>
         </Card>

@@ -157,7 +157,8 @@ Sign in with the seeded login — username `ADMIN_USERNAME`, password
 `ADMIN_PASSWORD` (defaults `admin` / `changeme`), then:
 
 1. **Settings → People** — add everyone expenses are split between. People carry
-   split percentages and never sign in.
+   split percentages and never sign in. Each one also picks a colour, used
+   wherever a chart is showing that person.
 2. **Settings → Accounts** — add each card or bank account, naming it exactly as
    it appears in your CSV exports, and set its default split.
 3. **Settings → People → Companies** — add where each person works. Paychecks
@@ -167,6 +168,11 @@ Sign in with the seeded login — username `ADMIN_USERNAME`, password
    sees all of the household's data.
 5. **Settings → Profile** — change the seeded password. Re-seeding never
    overwrites a password changed in the app.
+
+Every Settings tab follows the same shape: an **Add** button that opens a modal,
+and a **⋯** menu on each row for edit, deactivate, merge, and delete. Nothing is
+edited inline, so a mistyped rename can be cancelled and destructive actions
+take a deliberate second click.
 
 ## Monthly Workflow
 
@@ -250,6 +256,12 @@ Three separate ideas, deliberately:
 
 - **People** are who expenses are split between. They have no password. Adding,
   renaming, or deactivating them is a Settings change, not a schema change.
+  Each person owns a colour, chosen from a fixed eight-hue palette
+  (`src/lib/colors.ts`) picked for separation on the card background and under
+  colourblind simulation. Selecting a person on Spending, Net Worth, Cash Flow,
+  or FI recolours that page's charts to match, and the by-person charts colour
+  every bar by its owner. Semantic series — liabilities, taxes, expenses — keep
+  their own colours regardless of who is selected.
 - **Splits** are percentages that must total 100. An account carries a default
   split; a transaction can override it. Imported rows store no split of their
   own, so changing an account's split re-attributes its whole history.

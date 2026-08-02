@@ -1,8 +1,10 @@
 "use client";
 
+import { ColorDot } from "@/components/settings/color-picker";
+import { personColor } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 
-export type PersonOption = { id: string; name: string };
+export type PersonOption = { id: string; name: string; color?: string };
 
 /**
  * Segmented control for "whose spending am I looking at". Combined always sits
@@ -17,7 +19,7 @@ export function PersonToggle({
   value: string;
   onChange: (value: string) => void;
 }) {
-  const options = [{ id: "COMBINED", name: "Combined" }, ...people];
+  const options: PersonOption[] = [{ id: "COMBINED", name: "Combined" }, ...people];
 
   return (
     <div
@@ -41,7 +43,12 @@ export function PersonToggle({
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
-            {option.name}
+            <span className="flex items-center gap-1.5">
+              {option.id === "COMBINED" ? null : (
+                <ColorDot color={personColor(option.color)} />
+              )}
+              {option.name}
+            </span>
           </button>
         );
       })}

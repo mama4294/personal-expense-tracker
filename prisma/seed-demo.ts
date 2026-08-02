@@ -13,6 +13,7 @@ import bcrypt from "bcryptjs";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { DEFAULT_CATEGORIES } from "../src/lib/utils";
+import { PERSON_COLORS } from "../src/lib/colors";
 
 const db = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -115,13 +116,13 @@ async function main() {
   // --- people --------------------------------------------------------------
   const alex = await db.person.upsert({
     where: { name: "Alex" },
-    update: {},
-    create: { name: "Alex", sortOrder: 0 },
+    update: { color: PERSON_COLORS[0].value },
+    create: { name: "Alex", sortOrder: 0, color: PERSON_COLORS[0].value },
   });
   const sam = await db.person.upsert({
     where: { name: "Sam" },
-    update: {},
-    create: { name: "Sam", sortOrder: 1 },
+    update: { color: PERSON_COLORS[1].value },
+    create: { name: "Sam", sortOrder: 1, color: PERSON_COLORS[1].value },
   });
 
   // --- accounts, covering every ownership shape ----------------------------

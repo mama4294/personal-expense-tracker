@@ -23,7 +23,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  SERIES_COLORS,
   SimpleBarChart,
   SimpleLineChart,
   SimplePieChart,
@@ -38,6 +37,7 @@ import {
   type Transaction,
 } from "@/components/expenses/transactions-table";
 import type { Person } from "@/components/people/split-editor";
+import { personColor } from "@/lib/colors";
 import {
   formatCurrency,
   formatCurrencyPrecise,
@@ -107,6 +107,14 @@ export default function SpendingPage() {
 
   const selectedCategory = categories.find(
     (category) => category.id === filters.categoryId,
+  );
+
+  /** Charts follow whoever is selected; Combined keeps the default blue. */
+  const activeColor = personColor(
+    activePeople.find((entry) => entry.id === filters.person)?.color,
+  );
+  const colorByPerson = Object.fromEntries(
+    activePeople.map((entry) => [entry.name, personColor(entry.color)]),
   );
 
   /**
@@ -398,6 +406,7 @@ export default function SpendingPage() {
               xKey="month"
               yKey="total"
               name="Spending"
+              color={activeColor}
               xTickFormatter={formatMonthLabel}
             />
           </CardContent>
@@ -432,6 +441,7 @@ export default function SpendingPage() {
               xKey="name"
               yKey="total"
               name="Spending"
+              color={activeColor}
               onSelect={selectAccount}
               selected={
                 accounts.find((account) => account.id === filters.accountId)?.name ??
@@ -451,6 +461,7 @@ export default function SpendingPage() {
               xKey="name"
               yKey="total"
               name="Spending"
+              colorByLabel={colorByPerson}
             />
           </CardContent>
         </Card>
@@ -465,7 +476,7 @@ export default function SpendingPage() {
             <SimpleLineChart
               data={data?.yearOverYear ?? []}
               xKey="year"
-              lines={[{ key: "total", color: SERIES_COLORS[0], name: "Total" }]}
+              lines={[{ key: "total", color: activeColor, name: "Total" }]}
             />
           </CardContent>
         </Card>

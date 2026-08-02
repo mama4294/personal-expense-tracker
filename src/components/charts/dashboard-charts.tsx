@@ -69,6 +69,8 @@ export function SimpleBarChart({
   yKey,
   valueFormat = "currency",
   name,
+  color,
+  colorByLabel,
   xTickFormatter,
   onSelect,
   selected,
@@ -78,6 +80,10 @@ export function SimpleBarChart({
   yKey: string;
   valueFormat?: ValueFormat;
   name?: string;
+  /** Overrides the series colour — used to match the selected person. */
+  color?: string;
+  /** Per-bar colours keyed by the x label, for by-person charts. */
+  colorByLabel?: Record<string, string>;
   /** Formats the x-axis labels without changing the underlying data keys. */
   xTickFormatter?: (value: string) => string;
   /** Makes bars clickable; receives the category/account label that was hit. */
@@ -110,7 +116,7 @@ export function SimpleBarChart({
         <Bar
           dataKey={yKey}
           name={name ?? yKey}
-          fill={SERIES_COLORS[0]}
+          fill={color ?? SERIES_COLORS[0]}
           radius={[4, 4, 0, 0]}
           // The filters refetch on every change; re-animating from zero each
           // time reads as flicker, and a throttled tab can freeze it mid-grow.
@@ -129,14 +135,14 @@ export function SimpleBarChart({
               : undefined
           }
         >
-          {onSelect
+          {onSelect || colorByLabel
             ? data.map((entry) => {
                 const label = String(entry[xKey] ?? "");
                 const dimmed = selected != null && selected !== label;
                 return (
                   <Cell
                     key={label}
-                    fill={SERIES_COLORS[0]}
+                    fill={colorByLabel?.[label] ?? color ?? SERIES_COLORS[0]}
                     fillOpacity={dimmed ? 0.25 : 1}
                   />
                 );

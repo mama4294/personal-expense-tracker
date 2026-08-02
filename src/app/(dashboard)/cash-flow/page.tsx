@@ -23,6 +23,7 @@ import { StatCard } from "@/components/charts/dashboard-charts";
 import { CashFlowSankey } from "@/components/charts/sankey-chart";
 import { PersonToggle } from "@/components/filters/person-toggle";
 import { savingsRate } from "@/lib/income";
+import { personColor } from "@/lib/colors";
 import {
   cn,
   formatCurrency,
@@ -31,7 +32,7 @@ import {
   formatPercent,
 } from "@/lib/utils";
 
-type Person = { id: string; name: string; isActive: boolean };
+type Person = { id: string; name: string; isActive: boolean; color: string };
 
 type CashFlowRow = {
   month: string;
@@ -62,6 +63,9 @@ export default function CashFlowPage() {
   const [error, setError] = useState<string | null>(null);
 
   const activePeople = people.filter((entry) => entry.isActive);
+  const activeColor = personColor(
+    activePeople.find((entry) => entry.id === person)?.color,
+  );
 
   const load = useCallback(async () => {
     const [cashFlowResponse, peopleResponse] = await Promise.all([
@@ -263,6 +267,7 @@ export default function CashFlowPage() {
         <CardContent>
           {selected ? (
             <CashFlowSankey
+              incomeColor={activeColor}
               data={{
                 grossIncome: selected.grossIncome,
                 otherIncome: selected.otherIncome,

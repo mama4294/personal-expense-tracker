@@ -8,6 +8,8 @@ export type Person = {
   id: string;
   name: string;
   isActive: boolean;
+  /** Hex from the curated palette; drives this person's chart colour. */
+  color: string;
 };
 
 export type SplitRow = { personId: string; percent: number };

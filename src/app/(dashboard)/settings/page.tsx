@@ -1,19 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  RowActions,
+} from "@/components/ui/dropdown-menu";
 import {
   Badge,
   Table,
@@ -23,34 +21,27 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ColorDot } from "@/components/settings/color-picker";
+import {
+  AccountDialog,
+  CategoryDialog,
+  CompanyDialog,
+  LoginDialog,
+  MergeCategoryDialog,
+  PasswordDialog,
+  PersonDialog,
+  SplitCategoryDialog,
+} from "@/components/settings/settings-dialogs";
 import {
   describeSplitRows,
-  evenSplit,
-  SplitEditor,
-  splitTotal,
   type Person,
   type SplitRow,
 } from "@/components/people/split-editor";
+import { colorLabel, personColor } from "@/lib/colors";
 
-type Account = {
-  id: string;
-  name: string;
-  splits: SplitRow[];
-};
-
-type Category = {
-  id: string;
-  name: string;
-  excludedFromFi: boolean;
-};
-
-type Login = {
-  id: string;
-  username: string;
-  name: string;
-  createdAt: string;
-};
-
+type Account = { id: string; name: string; splits: SplitRow[] };
+type Category = { id: string; name: string; excludedFromFi: boolean };
+type Login = { id: string; username: string; name: string; createdAt: string };
 type Company = {
   id: string;
   name: string;
@@ -60,6 +51,18 @@ type Company = {
 };
 
 type Message = { tone: "error" | "ok"; text: string } | null;
+
+/** Which dialog is open, and on what. */
+type DialogState =
+  | { kind: "none" }
+  | { kind: "person"; person: Person | null }
+  | { kind: "company"; company: Company | null; defaultPersonId?: string }
+  | { kind: "account"; account: Account | null }
+  | { kind: "category"; category: Category | null }
+  | { kind: "merge"; category: Category }
+  | { kind: "split"; category: Category }
+  | { kind: "login" }
+  | { kind: "password" };
 
 export default function SettingsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -71,27 +74,10 @@ export default function SettingsPage() {
   const [withdrawalRate, setWithdrawalRate] = useState("0.04");
   const [message, setMessage] = useState<Message>(null);
   const [saving, setSaving] = useState(false);
-
-  // Draft copies so a row can be edited and then saved explicitly.
-  const [accountNames, setAccountNames] = useState<Record<string, string>>({});
-  const [accountSplits, setAccountSplits] = useState<Record<string, SplitRow[]>>({});
-  const [categoryDrafts, setCategoryDrafts] = useState<Record<string, string>>({});
-  const [mergeTargets, setMergeTargets] = useState<Record<string, string>>({});
-  const [personNames, setPersonNames] = useState<Record<string, string>>({});
-  const [companyNames, setCompanyNames] = useState<Record<string, string>>({});
-  const [newCompany, setNewCompany] = useState<Record<string, string>>({});
-
-  const [newAccount, setNewAccount] = useState({ name: "" });
-  const [newAccountSplits, setNewAccountSplits] = useState<SplitRow[]>([]);
-  const [newCategory, setNewCategory] = useState("");
-  const [newPerson, setNewPerson] = useState("");
-  const [newLogin, setNewLogin] = useState({ username: "", name: "", password: "" });
-  const [passwordForm, setPasswordForm] = useState({
-    currentPassword: "",
-    newPassword: "",
-  });
+  const [dialog, setDialog] = useState<DialogState>({ kind: "none" });
 
   const activePeople = people.filter((person) => person.isActive);
+  const close = () => setDialog({ kind: "none" });
 
   const loadSettings = useCallback(async () => {
     const [
@@ -119,44 +105,15 @@ export default function SettingsPage() {
       return;
     }
 
-    const accountData: Account[] = await accountResponse.json();
     const settingsData = await settingsResponse.json();
-    const peopleData: Person[] = await peopleResponse.json();
-    const loginData: Login[] = await loginResponse.json();
 
-    setAccounts(accountData);
-    setAccountNames(
-      Object.fromEntries(accountData.map((account) => [account.id, account.name])),
-    );
-    setAccountSplits(
-      Object.fromEntries(accountData.map((account) => [account.id, account.splits])),
-    );
-
+    setAccounts(await accountResponse.json());
     setCategories(settingsData.categories ?? []);
-    setCategoryDrafts(
-      Object.fromEntries(
-        (settingsData.categories ?? []).map((category: Category) => [
-          category.id,
-          category.name,
-        ]),
-      ),
-    );
     setWithdrawalRate(String(settingsData.settings?.withdrawalRate ?? 0.04));
     setCurrentUserId(settingsData.user?.id ?? null);
-
-    const companyData: Company[] = await companyResponse.json();
-
-    setPeople(peopleData);
-    setPersonNames(
-      Object.fromEntries(peopleData.map((person) => [person.id, person.name])),
-    );
-    setCompanies(companyData);
-    setCompanyNames(
-      Object.fromEntries(companyData.map((company) => [company.id, company.name])),
-    );
-    setLogins(loginData);
-
-    setNewAccountSplits(evenSplit(peopleData.filter((person) => person.isActive)));
+    setPeople(await peopleResponse.json());
+    setLogins(await loginResponse.json());
+    setCompanies(await companyResponse.json());
   }, []);
 
   useEffect(() => {
@@ -166,12 +123,15 @@ export default function SettingsPage() {
     run();
   }, [loadSettings]);
 
-  /** Runs a mutation, surfaces the server's message, and refreshes on success. */
+  /**
+   * Shared mutation path. Dialogs need the error back to display inline, while
+   * row actions just want the banner — so it returns the result either way.
+   */
   async function mutate(
     url: string,
     init: RequestInit,
     successText: string,
-  ): Promise<boolean> {
+  ): Promise<{ ok: boolean; error?: string }> {
     setSaving(true);
     setMessage(null);
 
@@ -182,286 +142,29 @@ export default function SettingsPage() {
 
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
-      setMessage({ tone: "error", text: data.error ?? "Something went wrong." });
+      const error = data.error ?? "Something went wrong.";
+      setMessage({ tone: "error", text: error });
       setSaving(false);
-      return false;
+      return { ok: false, error };
     }
 
     setMessage({ tone: "ok", text: successText });
     await loadSettings();
     setSaving(false);
-    return true;
+    return { ok: true };
   }
 
-  // --- People ---------------------------------------------------------------
-
-  async function addPerson() {
-    const created = await mutate(
-      "/api/people",
-      { method: "POST", body: JSON.stringify({ name: newPerson }) },
-      `${newPerson} added.`,
-    );
-    if (created) setNewPerson("");
-  }
-
-  async function renamePerson(person: Person) {
-    const name = personNames[person.id]?.trim();
-    if (!name || name === person.name) return;
-    await mutate(
-      `/api/people/${person.id}`,
-      { method: "PATCH", body: JSON.stringify({ name }) },
-      "Person renamed.",
-    );
-  }
-
-  async function togglePerson(person: Person) {
-    await mutate(
-      `/api/people/${person.id}`,
-      { method: "PATCH", body: JSON.stringify({ isActive: !person.isActive }) },
-      person.isActive ? `${person.name} deactivated.` : `${person.name} reactivated.`,
-    );
-  }
-
-  async function deletePerson(person: Person) {
-    if (!window.confirm(`Delete ${person.name}?`)) return;
-    await mutate(
-      `/api/people/${person.id}`,
-      { method: "DELETE" },
-      `${person.name} deleted.`,
-    );
-  }
-
-  // --- Companies ------------------------------------------------------------
-
-  async function addCompany(person: Person) {
-    const name = (newCompany[person.id] ?? "").trim();
-    if (!name) return;
-
-    const created = await mutate(
-      "/api/companies",
-      { method: "POST", body: JSON.stringify({ name, personId: person.id }) },
-      `${name} added for ${person.name}.`,
-    );
-
-    if (created) setNewCompany({ ...newCompany, [person.id]: "" });
-  }
-
-  async function renameCompany(company: Company) {
-    const name = companyNames[company.id]?.trim();
-    if (!name || name === company.name) return;
-    await mutate(
-      `/api/companies/${company.id}`,
-      { method: "PATCH", body: JSON.stringify({ name }) },
-      "Company renamed.",
-    );
-  }
-
-  async function toggleCompany(company: Company) {
-    await mutate(
-      `/api/companies/${company.id}`,
-      { method: "PATCH", body: JSON.stringify({ isActive: !company.isActive }) },
-      company.isActive
-        ? `${company.name} marked as a past employer.`
-        : `${company.name} reactivated.`,
-    );
-  }
-
-  async function deleteCompany(company: Company) {
-    if (!window.confirm(`Delete ${company.name}?`)) return;
-    await mutate(
-      `/api/companies/${company.id}`,
-      { method: "DELETE" },
-      `${company.name} deleted.`,
-    );
-  }
-
-  // --- Logins ---------------------------------------------------------------
-
-  async function addLogin() {
-    const created = await mutate(
-      "/api/users",
-      { method: "POST", body: JSON.stringify(newLogin) },
-      `Login "${newLogin.username}" created.`,
-    );
-    if (created) setNewLogin({ username: "", name: "", password: "" });
-  }
-
-  async function deleteLogin(login: Login) {
-    if (!window.confirm(`Delete the login "${login.username}"?`)) return;
-    await mutate(`/api/users/${login.id}`, { method: "DELETE" }, "Login deleted.");
-  }
-
-  // --- Accounts -------------------------------------------------------------
-
-  async function addAccount() {
-    if (splitTotal(newAccountSplits) !== 100) {
-      setMessage({ tone: "error", text: "Account shares must add up to 100%." });
-      return;
-    }
-
-    const created = await mutate(
-      "/api/accounts",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          name: newAccount.name,
-          splits: newAccountSplits.filter((split) => split.percent > 0),
-        }),
-      },
-      "Account added.",
-    );
-
-    if (created) setNewAccount({ name: "" });
-  }
-
-  async function saveAccount(account: Account) {
-    const splits = accountSplits[account.id] ?? [];
-    if (splitTotal(splits) !== 100) {
-      setMessage({ tone: "error", text: "Account shares must add up to 100%." });
-      return;
-    }
-
-    await mutate(
-      `/api/accounts/${account.id}`,
-      {
-        method: "PATCH",
-        body: JSON.stringify({
-          name: accountNames[account.id],
-          splits: splits.filter((split) => split.percent > 0),
-        }),
-      },
-      "Account updated.",
-    );
-  }
-
-  async function deleteAccount(account: Account) {
-    if (!window.confirm(`Delete ${account.name}?`)) return;
-    await mutate(
-      `/api/accounts/${account.id}`,
-      { method: "DELETE" },
-      "Account deleted.",
-    );
-  }
-
-  // --- Categories -----------------------------------------------------------
-
-  async function addCategory() {
-    const created = await mutate(
-      "/api/categories",
-      { method: "POST", body: JSON.stringify({ name: newCategory }) },
-      "Category added.",
-    );
-    if (created) setNewCategory("");
-  }
-
-  async function renameCategory(category: Category) {
-    const name = categoryDrafts[category.id]?.trim();
-    if (!name || name === category.name) return;
-    await mutate(
-      `/api/categories/${category.id}`,
-      { method: "PATCH", body: JSON.stringify({ name }) },
-      "Category renamed.",
-    );
-  }
-
-  async function mergeCategory(category: Category) {
-    const targetCategoryId = mergeTargets[category.id];
-    if (!targetCategoryId) {
-      setMessage({ tone: "error", text: "Pick a category to merge into." });
-      return;
-    }
-
-    const target = categories.find((item) => item.id === targetCategoryId);
-    if (
-      !window.confirm(
-        `Move every ${category.name} transaction into ${target?.name} and delete ${category.name}?`,
-      )
-    ) {
-      return;
-    }
-
-    await mutate(
-      `/api/categories/${category.id}`,
-      {
-        method: "PATCH",
-        body: JSON.stringify({ action: "merge", targetCategoryId }),
-      },
-      `Merged into ${target?.name}.`,
-    );
-  }
-
-  async function splitCategory(category: Category) {
-    const newCategoryName = window.prompt(
-      `Split ${category.name}: name the new category to move transactions into.`,
-    );
-    if (!newCategoryName?.trim()) return;
-
-    await mutate(
-      `/api/categories/${category.id}`,
-      {
-        method: "PATCH",
-        body: JSON.stringify({
-          action: "split",
-          newCategoryName: newCategoryName.trim(),
-        }),
-      },
-      `Created ${newCategoryName.trim()}. Reassign transactions from the Expenses page.`,
-    );
-  }
-
-  async function deleteCategory(category: Category) {
-    if (
-      !window.confirm(
-        `Delete ${category.name}? Its transactions become uncategorized.`,
-      )
-    ) {
-      return;
-    }
-
-    await mutate(
-      `/api/categories/${category.id}`,
-      { method: "DELETE" },
-      "Category deleted.",
-    );
-  }
-
-  // --- FI + profile ---------------------------------------------------------
-
-  async function saveFiSettings() {
-    await mutate(
-      "/api/settings",
-      {
-        method: "PATCH",
-        body: JSON.stringify({
-          withdrawalRate: Number(withdrawalRate),
-          categoryFiExclusions: categories.map((category) => ({
-            id: category.id,
-            excludedFromFi: category.excludedFromFi,
-          })),
-        }),
-      },
-      "FI settings saved.",
-    );
-  }
-
-  async function savePassword() {
-    const updated = await mutate(
-      "/api/settings",
-      {
-        method: "PATCH",
-        body: JSON.stringify({ action: "change-password", ...passwordForm }),
-      },
-      "Password updated.",
-    );
-    if (updated) setPasswordForm({ currentPassword: "", newPassword: "" });
-  }
+  const confirmThen = (question: string, run: () => Promise<unknown>) => {
+    if (window.confirm(question)) void run();
+  };
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-semibold">Settings</h2>
         <p className="text-sm text-muted-foreground">
-          Manage people, logins, accounts, categories, and FI assumptions.
+          Manage people, companies, logins, accounts, categories, and FI
+          assumptions.
         </p>
       </div>
 
@@ -480,6 +183,7 @@ export default function SettingsPage() {
       <Tabs defaultValue="people">
         <TabsList>
           <TabsTrigger value="people">People</TabsTrigger>
+          <TabsTrigger value="companies">Companies</TabsTrigger>
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
           <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="fi">FI Settings</TabsTrigger>
@@ -487,21 +191,28 @@ export default function SettingsPage() {
           <TabsTrigger value="profile">Profile</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="people" className="space-y-4">
+        {/* --- People --- */}
+        <TabsContent value="people">
           <Card>
-            <CardHeader>
-              <CardTitle>People</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Everyone expenses are split between. People don&apos;t sign in — they
-                only carry shares. Deactivate someone to keep their history while
-                removing them from new splits.
-              </p>
+            <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+              <div>
+                <CardTitle>People</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Everyone expenses are split between. People don&apos;t sign in —
+                  they carry shares and a colour used across the charts.
+                </p>
+              </div>
+              <Button onClick={() => setDialog({ kind: "person", person: null })}>
+                <Plus className="h-4 w-4" />
+                Add Person
+              </Button>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
+                    <TableHead>Colour</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -509,16 +220,27 @@ export default function SettingsPage() {
                 <TableBody>
                   {people.map((person) => (
                     <TableRow key={person.id}>
+                      <TableCell className="font-medium">
+                        <span className="flex items-center gap-2">
+                          <ColorDot color={personColor(person.color)} />
+                          {person.name}
+                        </span>
+                      </TableCell>
                       <TableCell>
-                        <Input
-                          value={personNames[person.id] ?? person.name}
-                          onChange={(event) =>
-                            setPersonNames({
-                              ...personNames,
-                              [person.id]: event.target.value,
-                            })
-                          }
-                        />
+                        <span className="flex items-center gap-2">
+                          <span
+                            className="inline-block h-4 w-10 rounded"
+                            style={{
+                              backgroundColor: personColor(person.color),
+                            }}
+                            aria-hidden
+                          />
+                          {/* The swatch alone leaves this column empty for
+                              screen readers. */}
+                          <span className="text-sm text-muted-foreground">
+                            {colorLabel(person.color)}
+                          </span>
+                        </span>
                       </TableCell>
                       <TableCell>
                         <Badge variant={person.isActive ? "success" : "secondary"}>
@@ -526,39 +248,51 @@ export default function SettingsPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <span className="flex flex-wrap justify-end gap-2">
-                          <Button
-                            size="sm"
-                            disabled={saving}
-                            onClick={() => renamePerson(person)}
+                        <RowActions label={`Actions for ${person.name}`} disabled={saving}>
+                          <DropdownMenuItem
+                            onSelect={() => setDialog({ kind: "person", person })}
                           >
-                            Rename
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={saving}
-                            onClick={() => togglePerson(person)}
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() =>
+                              void mutate(
+                                `/api/people/${person.id}`,
+                                {
+                                  method: "PATCH",
+                                  body: JSON.stringify({ isActive: !person.isActive }),
+                                },
+                                person.isActive
+                                  ? `${person.name} deactivated.`
+                                  : `${person.name} reactivated.`,
+                              )
+                            }
                           >
                             {person.isActive ? "Deactivate" : "Reactivate"}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={`Delete ${person.name}`}
-                            disabled={saving}
-                            onClick={() => deletePerson(person)}
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            destructive
+                            onSelect={() =>
+                              confirmThen(`Delete ${person.name}?`, () =>
+                                mutate(
+                                  `/api/people/${person.id}`,
+                                  { method: "DELETE" },
+                                  `${person.name} deleted.`,
+                                ),
+                              )
+                            }
                           >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </span>
+                            Delete
+                          </DropdownMenuItem>
+                        </RowActions>
                       </TableCell>
                     </TableRow>
                   ))}
                   {people.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={3} className="text-muted-foreground">
-                        No people yet. Add one below to start splitting expenses.
+                      <TableCell colSpan={4} className="text-muted-foreground">
+                        No people yet.
                       </TableCell>
                     </TableRow>
                   ) : null}
@@ -566,230 +300,222 @@ export default function SettingsPage() {
               </Table>
             </CardContent>
           </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Companies</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Where each person earns. Paychecks are recorded against a company,
-                so someone working two jobs gets two paychecks a month. Left a job?
-                Mark it past — the pay history stays.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {people.map((person) => {
-                const owned = companies.filter(
-                  (company) => company.personId === person.id,
-                );
-
-                return (
-                  <div key={person.id} className="space-y-3 rounded-xl border p-4">
-                    <p className="font-medium">{person.name}</p>
-
-                    {owned.length > 0 ? (
-                      <div className="space-y-2">
-                        {owned.map((company) => (
-                          <div
-                            key={company.id}
-                            className="flex flex-wrap items-center gap-2"
-                          >
-                            <Input
-                              className="max-w-xs"
-                              value={companyNames[company.id] ?? company.name}
-                              onChange={(event) =>
-                                setCompanyNames({
-                                  ...companyNames,
-                                  [company.id]: event.target.value,
-                                })
-                              }
-                            />
-                            <Badge
-                              variant={company.isActive ? "success" : "secondary"}
-                            >
-                              {company.isActive ? "current" : "past"}
-                            </Badge>
-                            <span className="ml-auto flex gap-2">
-                              <Button
-                                size="sm"
-                                disabled={saving}
-                                onClick={() => renameCompany(company)}
-                              >
-                                Rename
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={saving}
-                                onClick={() => toggleCompany(company)}
-                              >
-                                {company.isActive ? "Mark past" : "Reactivate"}
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                aria-label={`Delete ${company.name}`}
-                                disabled={saving}
-                                onClick={() => deleteCompany(company)}
-                              >
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        No companies yet for {person.name}.
-                      </p>
-                    )}
-
-                    <div className="flex flex-wrap gap-2">
-                      <Input
-                        className="max-w-xs"
-                        placeholder={`Add a company for ${person.name}`}
-                        value={newCompany[person.id] ?? ""}
-                        onChange={(event) =>
-                          setNewCompany({
-                            ...newCompany,
-                            [person.id]: event.target.value,
-                          })
-                        }
-                      />
-                      <Button
-                        variant="outline"
-                        disabled={saving || !(newCompany[person.id] ?? "").trim()}
-                        onClick={() => addCompany(person)}
-                      >
-                        Add
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-              {people.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Add a person first, then give them companies.
-                </p>
-              ) : null}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle>Add Person</CardTitle></CardHeader>
-            <CardContent className="flex flex-wrap gap-3">
-              <Input
-                className="max-w-xs"
-                placeholder="Name"
-                value={newPerson}
-                onChange={(event) => setNewPerson(event.target.value)}
-              />
-              <Button onClick={addPerson} disabled={saving || !newPerson.trim()}>
-                Add
-              </Button>
-            </CardContent>
-          </Card>
         </TabsContent>
 
-        <TabsContent value="accounts" className="space-y-4">
+        {/* --- Companies --- */}
+        <TabsContent value="companies">
           <Card>
-            <CardHeader>
-              <CardTitle>Accounts</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Each account carries a default split. Imported transactions inherit it,
-                so changing an account&apos;s shares re-attributes its history.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {accounts.map((account) => (
-                <div key={account.id} className="space-y-3 rounded-xl border p-4">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <Input
-                      className="max-w-sm"
-                      value={accountNames[account.id] ?? account.name}
-                      onChange={(event) =>
-                        setAccountNames({
-                          ...accountNames,
-                          [account.id]: event.target.value,
-                        })
-                      }
-                    />
-                    <Badge variant="outline">
-                      {describeSplitRows(accountSplits[account.id] ?? [], people)}
-                    </Badge>
-                    <span className="ml-auto flex gap-2">
-                      <Button
-                        size="sm"
-                        disabled={saving}
-                        onClick={() => saveAccount(account)}
-                      >
-                        Save
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Delete ${account.name}`}
-                        disabled={saving}
-                        onClick={() => deleteAccount(account)}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </span>
-                  </div>
-                  <SplitEditor
-                    people={activePeople}
-                    splits={accountSplits[account.id] ?? []}
-                    onChange={(splits) =>
-                      setAccountSplits({ ...accountSplits, [account.id]: splits })
-                    }
-                  />
-                </div>
-              ))}
-              {accounts.length === 0 ? (
+            <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+              <div>
+                <CardTitle>Companies</CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  No accounts yet. Add the cards and bank accounts your CSV exports use.
-                </p>
-              ) : null}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle>Add Account</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Name</Label>
-                <Input
-                  className="max-w-sm"
-                  placeholder="Credit Card - 9939"
-                  value={newAccount.name}
-                  onChange={(event) => setNewAccount({ name: event.target.value })}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Must match the Account column in your CSV exports exactly.
+                  Where each person earns. Left a job? Mark it past — the pay
+                  history stays.
                 </p>
               </div>
-              <SplitEditor
-                people={activePeople}
-                splits={newAccountSplits}
-                onChange={setNewAccountSplits}
-              />
               <Button
-                onClick={addAccount}
-                disabled={saving || !newAccount.name.trim() || activePeople.length === 0}
+                disabled={activePeople.length === 0}
+                onClick={() =>
+                  setDialog({
+                    kind: "company",
+                    company: null,
+                    defaultPersonId: activePeople[0]?.id,
+                  })
+                }
               >
-                Add Account
+                <Plus className="h-4 w-4" />
+                Add Company
               </Button>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Company</TableHead>
+                    <TableHead>Person</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {companies.map((company) => (
+                    <TableRow key={company.id}>
+                      <TableCell className="font-medium">{company.name}</TableCell>
+                      <TableCell>{company.person.name}</TableCell>
+                      <TableCell>
+                        <Badge variant={company.isActive ? "success" : "secondary"}>
+                          {company.isActive ? "current" : "past"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <RowActions
+                          label={`Actions for ${company.name}`}
+                          disabled={saving}
+                        >
+                          <DropdownMenuItem
+                            onSelect={() => setDialog({ kind: "company", company })}
+                          >
+                            Rename
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() =>
+                              void mutate(
+                                `/api/companies/${company.id}`,
+                                {
+                                  method: "PATCH",
+                                  body: JSON.stringify({ isActive: !company.isActive }),
+                                },
+                                company.isActive
+                                  ? `${company.name} marked as past.`
+                                  : `${company.name} reactivated.`,
+                              )
+                            }
+                          >
+                            {company.isActive ? "Mark past" : "Reactivate"}
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            destructive
+                            onSelect={() =>
+                              confirmThen(`Delete ${company.name}?`, () =>
+                                mutate(
+                                  `/api/companies/${company.id}`,
+                                  { method: "DELETE" },
+                                  `${company.name} deleted.`,
+                                ),
+                              )
+                            }
+                          >
+                            Delete
+                          </DropdownMenuItem>
+                        </RowActions>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {companies.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-muted-foreground">
+                        No companies yet.
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="categories" className="space-y-4">
+        {/* --- Accounts --- */}
+        <TabsContent value="accounts">
           <Card>
-            <CardHeader>
-              <CardTitle>Categories</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Rename in place, merge one category into another, or split off a new
-                category and reassign transactions from the Expenses page.
-              </p>
+            <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+              <div>
+                <CardTitle>Accounts</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Each account carries a default split. Imported transactions
+                  inherit it, so changing the shares re-attributes its history.
+                </p>
+              </div>
+              <Button
+                disabled={activePeople.length === 0}
+                onClick={() => setDialog({ kind: "account", account: null })}
+              >
+                <Plus className="h-4 w-4" />
+                Add Account
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Split</TableHead>
+                    <TableHead>Shares</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {accounts.map((account) => (
+                    <TableRow key={account.id}>
+                      <TableCell className="font-medium">{account.name}</TableCell>
+                      <TableCell>
+                        {describeSplitRows(account.splits, people)}
+                      </TableCell>
+                      <TableCell>
+                        <span className="flex flex-wrap gap-1">
+                          {account.splits.map((split) => {
+                            const owner = people.find(
+                              (person) => person.id === split.personId,
+                            );
+                            return (
+                              <Badge key={split.personId} variant="outline">
+                                <ColorDot
+                                  color={personColor(owner?.color)}
+                                  className="mr-1"
+                                />
+                                {owner?.name ?? "Unknown"} {split.percent}%
+                              </Badge>
+                            );
+                          })}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <RowActions
+                          label={`Actions for ${account.name}`}
+                          disabled={saving}
+                        >
+                          <DropdownMenuItem
+                            onSelect={() => setDialog({ kind: "account", account })}
+                          >
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            destructive
+                            onSelect={() =>
+                              confirmThen(`Delete ${account.name}?`, () =>
+                                mutate(
+                                  `/api/accounts/${account.id}`,
+                                  { method: "DELETE" },
+                                  "Account deleted.",
+                                ),
+                              )
+                            }
+                          >
+                            Delete
+                          </DropdownMenuItem>
+                        </RowActions>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {accounts.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-muted-foreground">
+                        No accounts yet.
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* --- Categories --- */}
+        <TabsContent value="categories">
+          <Card>
+            <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+              <div>
+                <CardTitle>Categories</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Rename, merge one into another, or split off a new one and
+                  reassign transactions from the Spending page.
+                </p>
+              </div>
+              <Button onClick={() => setDialog({ kind: "category", category: null })}>
+                <Plus className="h-4 w-4" />
+                Add Category
+              </Button>
             </CardHeader>
             <CardContent>
               <Table>
@@ -797,85 +523,58 @@ export default function SettingsPage() {
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Excluded from FI</TableHead>
-                    <TableHead>Merge into</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {categories.map((category) => (
                     <TableRow key={category.id}>
+                      <TableCell className="font-medium">{category.name}</TableCell>
                       <TableCell>
-                        <Input
-                          value={categoryDrafts[category.id] ?? category.name}
-                          onChange={(event) =>
-                            setCategoryDrafts({
-                              ...categoryDrafts,
-                              [category.id]: event.target.value,
-                            })
-                          }
-                        />
-                      </TableCell>
-                      <TableCell>{category.excludedFromFi ? "Yes" : "No"}</TableCell>
-                      <TableCell>
-                        <Select
-                          value={mergeTargets[category.id] ?? "none"}
-                          onValueChange={(value) =>
-                            setMergeTargets({
-                              ...mergeTargets,
-                              [category.id]: value === "none" ? "" : value,
-                            })
-                          }
-                        >
-                          <SelectTrigger className="min-w-[160px]">
-                            <SelectValue placeholder="Choose category" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">—</SelectItem>
-                            {categories
-                              .filter((option) => option.id !== category.id)
-                              .map((option) => (
-                                <SelectItem key={option.id} value={option.id}>
-                                  {option.name}
-                                </SelectItem>
-                              ))}
-                          </SelectContent>
-                        </Select>
+                        {category.excludedFromFi ? (
+                          <Badge variant="warning">excluded</Badge>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
-                        <span className="flex flex-wrap justify-end gap-2">
-                          <Button
-                            size="sm"
-                            disabled={saving}
-                            onClick={() => renameCategory(category)}
+                        <RowActions
+                          label={`Actions for ${category.name}`}
+                          disabled={saving}
+                        >
+                          <DropdownMenuItem
+                            onSelect={() => setDialog({ kind: "category", category })}
                           >
                             Rename
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={saving || !mergeTargets[category.id]}
-                            onClick={() => mergeCategory(category)}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => setDialog({ kind: "merge", category })}
                           >
-                            Merge
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={saving}
-                            onClick={() => splitCategory(category)}
+                            Merge into…
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => setDialog({ kind: "split", category })}
                           >
-                            Split
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={`Delete ${category.name}`}
-                            disabled={saving}
-                            onClick={() => deleteCategory(category)}
+                            Split off…
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            destructive
+                            onSelect={() =>
+                              confirmThen(
+                                `Delete ${category.name}? Its transactions become uncategorized.`,
+                                () =>
+                                  mutate(
+                                    `/api/categories/${category.id}`,
+                                    { method: "DELETE" },
+                                    "Category deleted.",
+                                  ),
+                              )
+                            }
                           >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </span>
+                            Delete
+                          </DropdownMenuItem>
+                        </RowActions>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -883,30 +582,17 @@ export default function SettingsPage() {
               </Table>
             </CardContent>
           </Card>
-
-          <Card>
-            <CardHeader><CardTitle>Add Category</CardTitle></CardHeader>
-            <CardContent className="flex flex-wrap gap-3">
-              <Input
-                className="max-w-xs"
-                value={newCategory}
-                onChange={(event) => setNewCategory(event.target.value)}
-                placeholder="Category name"
-              />
-              <Button onClick={addCategory} disabled={saving || !newCategory}>
-                Add
-              </Button>
-            </CardContent>
-          </Card>
         </TabsContent>
 
-        <TabsContent value="fi" className="space-y-4">
+        {/* --- FI settings --- */}
+        <TabsContent value="fi">
           <Card>
             <CardHeader><CardTitle>FI Settings</CardTitle></CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label>Withdrawal Rate</Label>
+                <Label htmlFor="withdrawal-rate">Withdrawal Rate</Label>
                 <Input
+                  id="withdrawal-rate"
                   type="number"
                   step="0.001"
                   min="0.01"
@@ -922,12 +608,15 @@ export default function SettingsPage() {
               <div className="space-y-2">
                 <Label>Excluded Categories</Label>
                 <p className="text-xs text-muted-foreground">
-                  Excluded categories are left out of the trailing 12-month spending
-                  used for the FI number.
+                  Excluded categories are left out of the trailing 12-month
+                  spending used for the FI number.
                 </p>
                 <div className="grid gap-2 md:grid-cols-2">
                   {categories.map((category) => (
-                    <label key={category.id} className="flex items-center gap-2 text-sm">
+                    <label
+                      key={category.id}
+                      className="flex items-center gap-2 text-sm"
+                    >
                       <input
                         type="checkbox"
                         checked={category.excludedFromFi}
@@ -946,21 +635,46 @@ export default function SettingsPage() {
                   ))}
                 </div>
               </div>
-              <Button onClick={saveFiSettings} disabled={saving}>
+              <Button
+                disabled={saving}
+                onClick={() =>
+                  void mutate(
+                    "/api/settings",
+                    {
+                      method: "PATCH",
+                      body: JSON.stringify({
+                        withdrawalRate: Number(withdrawalRate),
+                        categoryFiExclusions: categories.map((category) => ({
+                          id: category.id,
+                          excludedFromFi: category.excludedFromFi,
+                        })),
+                      }),
+                    },
+                    "FI settings saved.",
+                  )
+                }
+              >
                 Save FI Settings
               </Button>
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="logins" className="space-y-4">
+        {/* --- Logins --- */}
+        <TabsContent value="logins">
           <Card>
-            <CardHeader>
-              <CardTitle>Logins</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Anyone with a login sees all of this household&apos;s finances. Logins
-                are separate from People — one login can cover everybody.
-              </p>
+            <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+              <div>
+                <CardTitle>Logins</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Anyone with a login sees all of this household&apos;s finances.
+                  Logins are separate from People.
+                </p>
+              </div>
+              <Button onClick={() => setDialog({ kind: "login" })}>
+                <Plus className="h-4 w-4" />
+                Create Login
+              </Button>
             </CardHeader>
             <CardContent>
               <Table>
@@ -984,15 +698,27 @@ export default function SettingsPage() {
                       </TableCell>
                       <TableCell>{login.name}</TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label={`Delete ${login.username}`}
+                        <RowActions
+                          label={`Actions for ${login.username}`}
                           disabled={saving || login.id === currentUserId}
-                          onClick={() => deleteLogin(login)}
                         >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+                          <DropdownMenuItem
+                            destructive
+                            onSelect={() =>
+                              confirmThen(
+                                `Delete the login "${login.username}"?`,
+                                () =>
+                                  mutate(
+                                    `/api/users/${login.id}`,
+                                    { method: "DELETE" },
+                                    "Login deleted.",
+                                  ),
+                              )
+                            }
+                          >
+                            Delete
+                          </DropdownMenuItem>
+                        </RowActions>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -1000,117 +726,176 @@ export default function SettingsPage() {
               </Table>
             </CardContent>
           </Card>
-
-          <Card>
-            <CardHeader><CardTitle>Create Login</CardTitle></CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Username</Label>
-                <Input
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  placeholder="malone"
-                  value={newLogin.username}
-                  onChange={(event) =>
-                    setNewLogin({ ...newLogin, username: event.target.value })
-                  }
-                />
-                <p className="text-xs text-muted-foreground">
-                  Letters, numbers, dots, underscores, and hyphens.
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label>Display name</Label>
-                <Input
-                  placeholder="Malone Household"
-                  value={newLogin.name}
-                  onChange={(event) =>
-                    setNewLogin({ ...newLogin, name: event.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Password</Label>
-                <Input
-                  type="password"
-                  autoComplete="new-password"
-                  value={newLogin.password}
-                  onChange={(event) =>
-                    setNewLogin({ ...newLogin, password: event.target.value })
-                  }
-                />
-                <p className="text-xs text-muted-foreground">
-                  At least 8 characters.
-                </p>
-              </div>
-              <div className="flex items-end">
-                <Button
-                  onClick={addLogin}
-                  disabled={
-                    saving ||
-                    !newLogin.username.trim() ||
-                    !newLogin.name.trim() ||
-                    newLogin.password.length < 8
-                  }
-                >
-                  Create Login
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
         </TabsContent>
 
+        {/* --- Profile --- */}
         <TabsContent value="profile">
           <Card>
-            <CardHeader><CardTitle>Change Password</CardTitle></CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Current password</Label>
-                <Input
-                  type="password"
-                  autoComplete="current-password"
-                  value={passwordForm.currentPassword}
-                  onChange={(event) =>
-                    setPasswordForm({
-                      ...passwordForm,
-                      currentPassword: event.target.value,
-                    })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>New password</Label>
-                <Input
-                  type="password"
-                  autoComplete="new-password"
-                  value={passwordForm.newPassword}
-                  onChange={(event) =>
-                    setPasswordForm({
-                      ...passwordForm,
-                      newPassword: event.target.value,
-                    })
-                  }
-                />
-                <p className="text-xs text-muted-foreground">
-                  At least 8 characters.
+            <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+              <div>
+                <CardTitle>Profile</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Signed in as{" "}
+                  <span className="font-medium">
+                    {logins.find((login) => login.id === currentUserId)?.username ??
+                      "—"}
+                  </span>
+                  .
                 </p>
               </div>
-              <div className="flex items-end">
-                <Button
-                  onClick={savePassword}
-                  disabled={
-                    saving ||
-                    !passwordForm.currentPassword ||
-                    !passwordForm.newPassword
-                  }
-                >
-                  Update Password
-                </Button>
-              </div>
-            </CardContent>
+              <Button onClick={() => setDialog({ kind: "password" })}>
+                Change Password
+              </Button>
+            </CardHeader>
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* --- Dialogs --- */}
+      <PersonDialog
+        open={dialog.kind === "person"}
+        onOpenChange={(open) => (open ? null : close())}
+        person={dialog.kind === "person" ? dialog.person : null}
+        onSave={(values) =>
+          dialog.kind === "person" && dialog.person
+            ? mutate(
+                `/api/people/${dialog.person.id}`,
+                { method: "PATCH", body: JSON.stringify(values) },
+                `${values.name} updated.`,
+              )
+            : mutate(
+                "/api/people",
+                { method: "POST", body: JSON.stringify(values) },
+                `${values.name} added.`,
+              )
+        }
+      />
+
+      <CompanyDialog
+        open={dialog.kind === "company"}
+        onOpenChange={(open) => (open ? null : close())}
+        company={dialog.kind === "company" ? dialog.company : null}
+        defaultPersonId={
+          dialog.kind === "company" ? dialog.defaultPersonId : undefined
+        }
+        people={activePeople}
+        onSave={(values) =>
+          dialog.kind === "company" && dialog.company
+            ? mutate(
+                `/api/companies/${dialog.company.id}`,
+                { method: "PATCH", body: JSON.stringify({ name: values.name }) },
+                `${values.name} updated.`,
+              )
+            : mutate(
+                "/api/companies",
+                { method: "POST", body: JSON.stringify(values) },
+                `${values.name} added.`,
+              )
+        }
+      />
+
+      <AccountDialog
+        open={dialog.kind === "account"}
+        onOpenChange={(open) => (open ? null : close())}
+        account={dialog.kind === "account" ? dialog.account : null}
+        people={activePeople}
+        onSave={(values) =>
+          dialog.kind === "account" && dialog.account
+            ? mutate(
+                `/api/accounts/${dialog.account.id}`,
+                { method: "PATCH", body: JSON.stringify(values) },
+                "Account updated.",
+              )
+            : mutate(
+                "/api/accounts",
+                { method: "POST", body: JSON.stringify(values) },
+                "Account added.",
+              )
+        }
+      />
+
+      <CategoryDialog
+        open={dialog.kind === "category"}
+        onOpenChange={(open) => (open ? null : close())}
+        category={dialog.kind === "category" ? dialog.category : null}
+        onSave={(values) =>
+          dialog.kind === "category" && dialog.category
+            ? mutate(
+                `/api/categories/${dialog.category.id}`,
+                { method: "PATCH", body: JSON.stringify(values) },
+                "Category renamed.",
+              )
+            : mutate(
+                "/api/categories",
+                { method: "POST", body: JSON.stringify(values) },
+                "Category added.",
+              )
+        }
+      />
+
+      <MergeCategoryDialog
+        open={dialog.kind === "merge"}
+        onOpenChange={(open) => (open ? null : close())}
+        category={dialog.kind === "merge" ? dialog.category : null}
+        categories={categories}
+        onSave={(values) =>
+          dialog.kind === "merge"
+            ? mutate(
+                `/api/categories/${dialog.category.id}`,
+                {
+                  method: "PATCH",
+                  body: JSON.stringify({ action: "merge", ...values }),
+                },
+                "Categories merged.",
+              )
+            : Promise.resolve({ ok: false })
+        }
+      />
+
+      <SplitCategoryDialog
+        open={dialog.kind === "split"}
+        onOpenChange={(open) => (open ? null : close())}
+        category={dialog.kind === "split" ? dialog.category : null}
+        onSave={(values) =>
+          dialog.kind === "split"
+            ? mutate(
+                `/api/categories/${dialog.category.id}`,
+                {
+                  method: "PATCH",
+                  body: JSON.stringify({ action: "split", ...values }),
+                },
+                `${values.newCategoryName} created.`,
+              )
+            : Promise.resolve({ ok: false })
+        }
+      />
+
+      <LoginDialog
+        open={dialog.kind === "login"}
+        onOpenChange={(open) => (open ? null : close())}
+        onSave={(values) =>
+          mutate(
+            "/api/users",
+            { method: "POST", body: JSON.stringify(values) },
+            `Login "${values.username}" created.`,
+          )
+        }
+      />
+
+      <PasswordDialog
+        open={dialog.kind === "password"}
+        onOpenChange={(open) => (open ? null : close())}
+        onSave={(values) =>
+          mutate(
+            "/api/settings",
+            {
+              method: "PATCH",
+              body: JSON.stringify({ action: "change-password", ...values }),
+            },
+            "Password updated.",
+          )
+        }
+      />
     </div>
   );
 }

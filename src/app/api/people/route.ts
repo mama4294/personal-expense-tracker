@@ -1,9 +1,11 @@
 import { requireAuth, jsonOk, jsonError, jsonDbError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { z } from "zod";
+import { isPersonColor, nextPersonColor } from "@/lib/colors";
 
 const personSchema = z.object({
   name: z.string().min(1).max(60),
+  color: z.string().refine(isPersonColor, "Pick a colour from the palette.").optional(),
 });
 
 export async function GET() {
@@ -27,9 +29,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    const count = await db.person.count();
+    const existing = await db.person.findMany({ select: { color: true } });
     const person = await db.person.create({
-      data: { name: parsed.data.name.trim(), sortOrder: count },
+      data: {
+        name: parsed.data.name.trim(),
+        sortOrder: existing.length,
+        // Default to a palette colour nobody is using yet.
+        color:
+          parsed.data.color ?? nextPersonColor(existing.map((entry) => entry.color)),
+      },
     });
     return jsonOk(person, 201);
   } catch (createError) {
