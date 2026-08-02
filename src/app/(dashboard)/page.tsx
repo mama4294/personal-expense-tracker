@@ -46,7 +46,10 @@ import {
 } from "@/lib/utils";
 
 type SpendingData = {
+  /// Still used for the category drill-down share, just no longer a stat card.
   totalSpending: number;
+  projectedAnnualSpend: number;
+  projectionMonths: number;
   monthlySpending: { month: string; total: number }[];
   spendingByCategory: { name: string; total: number }[];
   spendingByAccount: { name: string; total: number }[];
@@ -377,9 +380,13 @@ export default function SpendingPage() {
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          label="Total Spending"
-          value={formatCurrency(data?.totalSpending ?? 0)}
-          hint={filters.person === "COMBINED" ? "Household" : "Selected person"}
+          label="Projected Annual Spend"
+          value={formatCurrency(data?.projectedAnnualSpend ?? 0)}
+          hint={
+            data?.projectionMonths
+              ? `Run rate from ${data.projectionMonths} ${data.projectionMonths === 1 ? "month" : "months"}`
+              : "No spending yet"
+          }
         />
         <StatCard
           label="Months Tracked"

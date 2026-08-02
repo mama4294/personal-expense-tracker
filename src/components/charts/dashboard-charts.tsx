@@ -33,8 +33,11 @@ export const SERIES_COLORS = [
   "#e34948",
 ] as const;
 
-/** Ninth and beyond fold into a single neutral "Other" slice. */
-const OTHER_COLOR = "#898781";
+/**
+ * Neutral grey for anything that isn't a real category: the folded "Other"
+ * slice, and holdings that belong to the household rather than a person.
+ */
+export const NEUTRAL_COLOR = "#898781";
 const GRID_COLOR = "#e2e8f0";
 const AXIS_COLOR = "#c3c2b7";
 const TICK_COLOR = "#64748b";
@@ -154,6 +157,65 @@ export function SimpleBarChart({
   );
 }
 
+/**
+ * One group of bars per x label, one bar per series — for comparing the same
+ * measure across people. Series colours are passed in so they can match the
+ * people they represent rather than falling back to slot order.
+ */
+export function GroupedBarChart({
+  data,
+  xKey,
+  series,
+  valueFormat = "currency",
+  xTickFormatter,
+}: {
+  data: Record<string, string | number>[];
+  xKey: string;
+  series: { key: string; color: string; name: string }[];
+  valueFormat?: ValueFormat;
+  xTickFormatter?: (value: string) => string;
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={320}>
+      <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
+        <CartesianGrid stroke={GRID_COLOR} vertical={false} />
+        <XAxis
+          dataKey={xKey}
+          tickFormatter={xTickFormatter}
+          tick={{ fontSize: 12, fill: TICK_COLOR }}
+          stroke={AXIS_COLOR}
+          interval={0}
+        />
+        <YAxis
+          tickFormatter={(value) => axisTick(Number(value), valueFormat)}
+          tick={{ fontSize: 12, fill: TICK_COLOR }}
+          stroke={AXIS_COLOR}
+        />
+        <Tooltip
+          contentStyle={tooltipStyle}
+          cursor={{ fill: "rgba(15, 23, 42, 0.04)" }}
+          formatter={(value) => formatValue(Number(value), valueFormat)}
+          labelFormatter={(label) =>
+            xTickFormatter ? xTickFormatter(String(label)) : String(label)
+          }
+        />
+        {/* Bars are only distinguishable by colour, so the key is required. */}
+        <Legend iconType="circle" />
+        {series.map((entry) => (
+          <Bar
+            key={entry.key}
+            dataKey={entry.key}
+            name={entry.name}
+            fill={entry.color}
+            radius={[4, 4, 0, 0]}
+            isAnimationActive={false}
+          />
+        ))}
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
 export function SimpleLineChart({
   data,
   xKey,
@@ -262,7 +324,8 @@ export function SimplePieChart({
               fill={
                 index < SERIES_COLORS.length
                   ? SERIES_COLORS[index]
-                  : OTHER_COLOR
+                  
+                  : NEUTRAL_COLOR
               }
               fillOpacity={
                 selected != null && selected !== slice.name ? 0.25 : 1

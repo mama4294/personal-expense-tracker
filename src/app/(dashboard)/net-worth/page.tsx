@@ -15,6 +15,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  GroupedBarChart,
+  NEUTRAL_COLOR,
   SERIES_COLORS,
   SimpleLineChart,
   SimplePieChart,
@@ -60,6 +62,9 @@ type Snapshot = {
 type NetWorthData = {
   timeline: { month: string; netWorth: number; assets: number; liabilities: number }[];
   allocation: { name: string; total: number }[];
+  /// One row per account, with a numeric column per holder.
+  accountsByPerson: Record<string, string | number>[];
+  accountHolders: string[];
   latestNetWorth: number;
   jointNetWorth: number;
 };
@@ -195,6 +200,22 @@ export default function NetWorthPage() {
     total: item.total,
   }));
 
+  const accountRows = (data?.accountsByPerson ?? []).map((row) => ({
+    ...row,
+    name: ASSET_LABELS[String(row.name)] ?? String(row.name),
+  }));
+
+  // Jointly held accounts belong to no one, so they get the neutral slot
+  // rather than borrowing a person's colour.
+  const holderSeries = (data?.accountHolders ?? []).map((holder) => ({
+    key: holder,
+    name: holder,
+    color:
+      holder === "Combined"
+        ? NEUTRAL_COLOR
+        : personColor(people.find((entry) => entry.name === holder)?.color),
+  }));
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -277,6 +298,29 @@ export default function NetWorthPage() {
           </CardHeader>
           <CardContent>
             <SimplePieChart data={allocation} />
+          </CardContent>
+        </Card>
+
+        <Card className="xl:col-span-2">
+          <CardHeader>
+            <CardTitle>Accounts by Person</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Latest balances. Always shows everyone, whatever the filter above
+              is set to.
+            </p>
+          </CardHeader>
+          <CardContent>
+            {accountRows.length > 0 ? (
+              <GroupedBarChart
+                data={accountRows}
+                xKey="name"
+                series={holderSeries}
+              />
+            ) : (
+              <p className="py-12 text-center text-sm text-muted-foreground">
+                No balances recorded yet.
+              </p>
+            )}
           </CardContent>
         </Card>
 

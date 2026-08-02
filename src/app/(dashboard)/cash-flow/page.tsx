@@ -47,6 +47,7 @@ type CashFlowRow = {
   dentalVision: number;
   savings: number;
   categories: { name: string; total: number }[];
+  incomeByCompany: { name: string; total: number; personId: string }[];
   hasPaycheck: boolean;
 };
 
@@ -102,6 +103,15 @@ export default function CashFlowPage() {
   const selectedRate = selected
     ? savingsRate(selected.savings, selected.netIncome)
     : null;
+
+  // On Combined each employer keeps its earner's colour, which is the only way
+  // to tell whose pay is whose once several jobs feed the same pool.
+  const employers = (selected?.incomeByCompany ?? []).map((entry) => ({
+    ...entry,
+    color: personColor(
+      people.find((who) => who.id === entry.personId)?.color,
+    ),
+  }));
 
   return (
     <div className="space-y-6">
@@ -270,6 +280,7 @@ export default function CashFlowPage() {
               incomeColor={activeColor}
               data={{
                 grossIncome: selected.grossIncome,
+                incomeByCompany: employers,
                 otherIncome: selected.otherIncome,
                 taxes: selected.taxes,
                 retirement401k: selected.retirement401k,

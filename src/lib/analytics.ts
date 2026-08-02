@@ -242,6 +242,17 @@ export async function getSpendingDashboard(filters: DashboardFilters = {}) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([month, total]) => ({ month, total }));
 
+  // Annualised run rate, not a total. The current month is still accumulating,
+  // so including it would drag the average down and understate the projection;
+  // it only counts when it's the sole month of data.
+  const nowKey = `${new Date().getUTCFullYear()}-${String(new Date().getUTCMonth() + 1).padStart(2, "0")}`;
+  const completeMonths = monthlySpending.filter((item) => item.month !== nowKey);
+  const basis = completeMonths.length > 0 ? completeMonths : monthlySpending;
+  const projectedAnnualSpend =
+    basis.length > 0
+      ? (basis.reduce((sum, item) => sum + item.total, 0) / basis.length) * 12
+      : 0;
+
   const yoyMap = new Map<number, number>();
   for (const item of monthlySpending) {
     const year = Number(item.month.slice(0, 4));
@@ -252,6 +263,8 @@ export async function getSpendingDashboard(filters: DashboardFilters = {}) {
 
   return {
     totalSpending: mapped.reduce((sum, tx) => sum + tx.filteredAmount, 0),
+    projectedAnnualSpend,
+    projectionMonths: basis.length,
     monthlySpending,
     spendingByCategory: Array.from(categoryMap.entries())
       .map(([name, total]) => ({ name, total }))
@@ -409,7 +422,14 @@ export async function getNetWorthDashboard(person: PersonFilter = "COMBINED") {
 
   const latest = snapshots.at(-1);
   const allocationMap = new Map<string, number>();
+  // Who holds what, per account. Unlike `allocation` this ignores the person
+  // filter: the whole point of the chart is comparing people side by side.
+  const byAccount = new Map<string, Map<string, number>>();
+  const holders = new Set<string>();
   let jointNetWorth = 0;
+
+  const people = await getActivePeople();
+  const personNames = new Map(people.map((entry) => [entry.id, entry.name]));
 
   if (latest) {
     for (const balance of latest.balances) {
@@ -417,6 +437,18 @@ export async function getNetWorthDashboard(person: PersonFilter = "COMBINED") {
         jointNetWorth +=
           balance.assetType ? Number(balance.amount) : -Number(balance.amount);
       }
+
+      if (balance.assetType) {
+        const holder = balance.personId
+          ? (personNames.get(balance.personId) ?? "Unknown")
+          : "Combined";
+        holders.add(holder);
+        const account =
+          byAccount.get(balance.assetType) ?? new Map<string, number>();
+        account.set(holder, (account.get(holder) ?? 0) + Number(balance.amount));
+        byAccount.set(balance.assetType, account);
+      }
+
       if (!mine(balance) || !balance.assetType) continue;
       allocationMap.set(
         balance.assetType,
@@ -425,12 +457,29 @@ export async function getNetWorthDashboard(person: PersonFilter = "COMBINED") {
     }
   }
 
+  // Person order first, then jointly held, so the bars keep a stable order
+  // rather than following whatever the snapshot happened to list first.
+  const holderOrder = [
+    ...people.map((entry) => entry.name).filter((name) => holders.has(name)),
+    ...(holders.has("Combined") ? ["Combined"] : []),
+  ];
+
+  const accountsByPerson = Array.from(byAccount.entries())
+    .map(([account, amounts]) => ({
+      name: account,
+      total: Array.from(amounts.values()).reduce((sum, value) => sum + value, 0),
+      ...Object.fromEntries(holderOrder.map((who) => [who, amounts.get(who) ?? 0])),
+    }))
+    .sort((a, b) => b.total - a.total);
+
   return {
     timeline,
     allocation: Array.from(allocationMap.entries()).map(([name, total]) => ({
       name,
       total,
     })),
+    accountsByPerson,
+    accountHolders: holderOrder,
     latestNetWorth: timeline.at(-1)?.netWorth ?? 0,
     /// Held by the household rather than any one person; excluded from a
     /// person view, so the page can say so instead of quietly losing it.
@@ -545,6 +594,10 @@ export async function getCashFlow(person: PersonFilter = "COMBINED") {
     getActivePeople(),
     db.monthlyIncome.findMany({
       where: person === "COMBINED" ? {} : { personId: person },
+      include: {
+        company: { select: { name: true } },
+        person: { select: { name: true } },
+      },
     }),
     db.income.findMany({
       where: person === "COMBINED" ? {} : { personId: person },
@@ -587,6 +640,40 @@ export async function getCashFlow(person: PersonFilter = "COMBINED") {
     );
   }
 
+  // Two people can both work somewhere called "Meta", and the diagram would
+  // silently merge them. Only disambiguate when the collision is real, so the
+  // common single-holder case keeps a clean label.
+  const holdersByLabel = new Map<string, Set<string>>();
+  for (const entry of paychecks) {
+    const name = entry.company?.name ?? "Unassigned";
+    const holders = holdersByLabel.get(name) ?? new Set<string>();
+    holders.add(entry.personId);
+    holdersByLabel.set(name, holders);
+  }
+
+  const companyLabel = (entry: (typeof paychecks)[number]) => {
+    const name = entry.company?.name ?? "Unassigned";
+    return (holdersByLabel.get(name)?.size ?? 0) > 1
+      ? `${name} (${entry.person.name})`
+      : name;
+  };
+
+  // personId rides along so the chart can colour each employer by whoever
+  // earns there. Disambiguation above guarantees one person per label.
+  type CompanyTotal = { total: number; personId: string };
+  const companyByMonth = new Map<string, Map<string, CompanyTotal>>();
+  for (const entry of paychecks) {
+    const key = monthKey(entry.month);
+    const byCompany = companyByMonth.get(key) ?? new Map<string, CompanyTotal>();
+    const label = companyLabel(entry);
+    const running = byCompany.get(label)?.total ?? 0;
+    byCompany.set(label, {
+      total: running + Number(entry.grossIncome),
+      personId: entry.personId,
+    });
+    companyByMonth.set(key, byCompany);
+  }
+
   const otherByMonth = new Map<string, number>();
   for (const entry of otherIncome) {
     const key = monthKey(entry.date);
@@ -621,6 +708,9 @@ export async function getCashFlow(person: PersonFilter = "COMBINED") {
       savings: monthlySavings(paycheck, other, expenses),
       categories: Array.from(categoriesByMonth.get(month) ?? [])
         .map(([name, total]) => ({ name, total }))
+        .sort((a, b) => b.total - a.total),
+      incomeByCompany: Array.from(companyByMonth.get(month) ?? [])
+        .map(([name, entry]) => ({ name, ...entry }))
         .sort((a, b) => b.total - a.total),
       hasPaycheck: paychecksByMonth.has(month),
     };
