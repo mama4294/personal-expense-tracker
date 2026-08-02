@@ -111,6 +111,7 @@ export const ASSET_LABELS: Record<string, string> = {
   CHECKING: "Checking",
   SAVINGS: "Savings",
   BROKERAGE: "Brokerage",
+  RSU: "RSU",
   FOUR_O_ONE_K: "401k",
   ROTH_IRA: "Roth IRA",
   HSA: "HSA",
@@ -126,6 +127,7 @@ export const LIABILITY_LABELS: Record<string, string> = {
 
 export const INVESTMENT_ASSETS = [
   "BROKERAGE",
+  "RSU",
   "FOUR_O_ONE_K",
   "ROTH_IRA",
   "HSA",

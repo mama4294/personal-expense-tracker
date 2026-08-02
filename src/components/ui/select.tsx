@@ -47,6 +47,35 @@ export function SelectContent({
   );
 }
 
+export const SelectGroup = SelectPrimitive.Group;
+
+export function SelectLabel({
+  className,
+  ...props
+}: React.ComponentProps<typeof SelectPrimitive.Label>) {
+  return (
+    <SelectPrimitive.Label
+      className={cn(
+        "px-2 py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export function SelectSeparator({
+  className,
+  ...props
+}: React.ComponentProps<typeof SelectPrimitive.Separator>) {
+  return (
+    <SelectPrimitive.Separator
+      className={cn("my-1 h-px bg-border", className)}
+      {...props}
+    />
+  );
+}
+
 export function SelectItem({
   className,
   children,

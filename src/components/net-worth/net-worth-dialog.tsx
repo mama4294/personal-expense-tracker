@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,7 +15,10 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -30,6 +33,7 @@ export const ASSET_TYPES = [
   "CHECKING",
   "SAVINGS",
   "BROKERAGE",
+  "RSU",
   "FOUR_O_ONE_K",
   "ROTH_IRA",
   "HSA",
@@ -103,6 +107,23 @@ export function rowsFromSnapshot(
   });
 }
 
+/**
+ * Asset and liability accounts share one dropdown, so the option value has to
+ * carry both halves of the answer. The two type lists don't overlap today, but
+ * encoding the kind keeps that from becoming a correctness requirement.
+ */
+function accountValue(kind: BalanceRow["kind"], type: string) {
+  return `${kind}:${type}`;
+}
+
+function parseAccountValue(value: string): {
+  kind: BalanceRow["kind"];
+  type: string;
+} {
+  const [kind, type] = value.split(":");
+  return { kind: kind as BalanceRow["kind"], type };
+}
+
 /** Keys the previous-month lookup by the account *and* who holds it. */
 export function balanceKey(type: string, personId: string | null) {
   return `${type}|${personId ?? COMBINED}`;
@@ -141,14 +162,42 @@ export function NetWorthDialog({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // A month carried forward can run to a dozen rows, so an appended row lands
+  // well below the scroll box and the click reads as a no-op. Scroll to it and
+  // put the cursor on the field the user is going to change first.
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  // A ref, not state: this is a one-shot side effect on the row that was just
+  // appended, and it must not trigger another render of its own.
+  const pendingFocus = useRef<string | null>(null);
+
+  useEffect(() => {
+    const key = pendingFocus.current;
+    if (!key) return;
+    pendingFocus.current = null;
+    const row = scrollerRef.current?.querySelector(`[data-row-key="${key}"]`);
+    row?.scrollIntoView({ block: "nearest" });
+    row?.querySelector<HTMLElement>('[aria-label="Account type"]')?.focus();
+  }, [rows]);
+
+  function addRow() {
+    const row = newRow();
+    pendingFocus.current = row.key;
+    onRowsChange([...rows, row]);
+  }
+
   function updateRow(key: string, changes: Partial<BalanceRow>) {
     onRowsChange(
       rows.map((row) => {
         if (row.key !== key) return row;
         const next = { ...row, ...changes };
-        // Switching between asset and liability needs a valid type for the
-        // new kind, since the two lists don't overlap.
-        if (changes.kind && changes.kind !== row.kind) {
+        // Switching between asset and liability needs a valid type for the new
+        // kind, since the two lists don't overlap. The account dropdown always
+        // sends both together, so only fall back when the type was left out.
+        if (
+          changes.kind &&
+          changes.kind !== row.kind &&
+          changes.type === undefined
+        ) {
           next.type =
             changes.kind === "asset" ? ASSET_TYPES[0] : LIABILITY_TYPES[0];
         }
@@ -223,15 +272,17 @@ export function NetWorthDialog({
           </div>
 
           <div className="space-y-2">
-            <div className="hidden gap-3 px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground sm:grid sm:grid-cols-[110px_1fr_1fr_150px_40px]">
-              <span>Kind</span>
+            <div className="hidden gap-3 px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground sm:grid sm:grid-cols-[1.2fr_1fr_150px_40px]">
               <span>Account</span>
               <span>Person</span>
               <span>Amount</span>
               <span className="sr-only">Remove</span>
             </div>
 
-            <div className="max-h-[340px] space-y-2 overflow-y-auto pr-1">
+            <div
+              ref={scrollerRef}
+              className="max-h-[340px] space-y-2 overflow-y-auto pr-1"
+            >
               {rows.map((row) => {
                 const previous =
                   previousBalances[balanceKey(row.type, row.personId)];
@@ -246,45 +297,42 @@ export function NetWorthDialog({
                 return (
                   <div
                     key={row.key}
-                    className="grid gap-3 rounded-lg border border-border p-3 sm:grid-cols-[110px_1fr_1fr_150px_40px] sm:items-start sm:border-0 sm:p-1"
+                    data-row-key={row.key}
+                    className="grid gap-3 rounded-lg border border-border p-3 sm:grid-cols-[1.2fr_1fr_150px_40px] sm:items-start sm:border-0 sm:p-1"
                   >
                     <Select
-                      value={row.kind}
+                      value={accountValue(row.kind, row.type)}
                       onValueChange={(value) =>
-                        updateRow(row.key, {
-                          kind: value as "asset" | "liability",
-                        })
-                      }
-                    >
-                      <SelectTrigger aria-label="Kind">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="asset">Asset</SelectItem>
-                        <SelectItem value="liability">Liability</SelectItem>
-                      </SelectContent>
-                    </Select>
-
-                    <Select
-                      value={row.type}
-                      onValueChange={(value) =>
-                        updateRow(row.key, { type: value })
+                        updateRow(row.key, parseAccountValue(value))
                       }
                     >
                       <SelectTrigger aria-label="Account type">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {(row.kind === "asset"
-                          ? ASSET_TYPES
-                          : LIABILITY_TYPES
-                        ).map((type) => (
-                          <SelectItem key={type} value={type}>
-                            {row.kind === "asset"
-                              ? ASSET_LABELS[type]
-                              : LIABILITY_LABELS[type]}
-                          </SelectItem>
-                        ))}
+                        <SelectGroup>
+                          <SelectLabel>Assets</SelectLabel>
+                          {ASSET_TYPES.map((type) => (
+                            <SelectItem
+                              key={type}
+                              value={accountValue("asset", type)}
+                            >
+                              {ASSET_LABELS[type]}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                        <SelectSeparator />
+                        <SelectGroup>
+                          <SelectLabel>Liabilities</SelectLabel>
+                          {LIABILITY_TYPES.map((type) => (
+                            <SelectItem
+                              key={type}
+                              value={accountValue("liability", type)}
+                            >
+                              {LIABILITY_LABELS[type]}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
                       </SelectContent>
                     </Select>
 
@@ -365,7 +413,7 @@ export function NetWorthDialog({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => onRowsChange([...rows, newRow()])}
+              onClick={addRow}
             >
               <Plus className="h-4 w-4" />
               Add row

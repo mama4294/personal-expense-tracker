@@ -9,6 +9,7 @@ const balanceSchema = z
         "CHECKING",
         "SAVINGS",
         "BROKERAGE",
+        "RSU",
         "FOUR_O_ONE_K",
         "ROTH_IRA",
         "HSA",
