@@ -1,4 +1,8 @@
 FROM node:22-alpine AS base
+# Prisma's engine binaries link against OpenSSL, and the same package has to be
+# present when the engine is downloaded and when it runs, or platform detection
+# disagrees between the two stages.
+RUN apk add --no-cache openssl
 
 # Full tree, including dev tooling, because `next build` needs TypeScript and
 # Tailwind. --ignore-scripts skips the `postinstall: prisma generate` hook, which
@@ -11,10 +15,19 @@ RUN npm ci --ignore-scripts
 
 # Runtime-only tree for the migrator. Keeps `embedded-postgres` — a 140 MB local
 # development convenience — out of the published image.
+#
+# --ignore-scripts skips the root postinstall for the same reason as above, but
+# it also skips @prisma/engines' postinstall, which is what fetches the schema
+# engine `migrate deploy` runs on. Without the rebuild the binary is absent and
+# Prisma downloads it at container start — so every deploy depends on the
+# server reaching binaries.prisma.sh, and dies with ECONNRESET when it can't.
 FROM base AS deps-prod
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts
+RUN npm ci --omit=dev --ignore-scripts \
+ && npm rebuild @prisma/engines \
+ && { ls node_modules/@prisma/engines/schema-engine-* >/dev/null 2>&1 \
+      || { echo "schema engine missing; migrate would download it at runtime"; exit 1; }; }
 
 FROM base AS builder
 WORKDIR /app
