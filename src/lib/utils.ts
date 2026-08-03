@@ -126,6 +126,21 @@ export const LIABILITY_LABELS: Record<string, string> = {
 };
 
 /**
+ * mm/dd/yy from an ISO date. Read in UTC deliberately: the stored dates are
+ * midnight UTC, and letting the browser localise them shifts a transaction to
+ * the previous day for anyone west of Greenwich.
+ */
+export function formatShortDate(value: string | Date): string {
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const year = String(date.getUTCFullYear()).slice(2);
+  return `${month}/${day}/${year}`;
+}
+
+/**
  * What to call an account on screen. `name` has to match the CSV export exactly
  * for import to work, which makes it a poor label; the nickname is what the
  * household actually calls it.

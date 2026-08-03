@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, SlidersHorizontal, Upload, X } from "lucide-react";
+import { Plus, Search, SlidersHorizontal, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -29,7 +29,11 @@ import {
   StatCard,
 } from "@/components/charts/dashboard-charts";
 import { PersonToggle } from "@/components/filters/person-toggle";
-import { DateRangePicker, type DateRange } from "@/components/filters/date-range";
+import {
+  DateRangePicker,
+  defaultRange,
+  type DateRange,
+} from "@/components/filters/date-range";
 import { ExpenseDialog } from "@/components/expenses/expense-dialog";
 import { ImportDialog } from "@/components/expenses/import-dialog";
 import {
@@ -73,17 +77,22 @@ type Filters = {
   search: string;
 };
 
-const emptyFilters: Filters = {
-  person: "COMBINED",
-  startDate: "",
-  endDate: "",
-  categoryId: "",
-  accountId: "",
-  tag: "",
-  minAmount: "",
-  maxAmount: "",
-  search: "",
-};
+/**
+ * Resolved at call time, not module load, so the default range is still right
+ * for a tab left open across a month boundary.
+ */
+function defaultFilters(): Filters {
+  return {
+    person: "COMBINED",
+    ...defaultRange(),
+    categoryId: "",
+    accountId: "",
+    tag: "",
+    minAmount: "",
+    maxAmount: "",
+    search: "",
+  };
+}
 
 function toQuery(filters: Partial<Filters>) {
   const params = new URLSearchParams();
@@ -94,7 +103,7 @@ function toQuery(filters: Partial<Filters>) {
 }
 
 export default function SpendingPage() {
-  const [filters, setFilters] = useState<Filters>(emptyFilters);
+  const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [data, setData] = useState<SpendingData | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Option[]>([]);
@@ -268,120 +277,16 @@ export default function SpendingPage() {
 
       <Card>
         <CardContent className="space-y-4 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <PersonToggle
-              people={activePeople}
-              value={filters.person}
-              onChange={(person) => setFilters({ ...filters, person })}
-            />
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowMoreFilters((open) => !open)}
-            >
-              <SlidersHorizontal className="h-4 w-4" />
-              {showMoreFilters ? "Fewer filters" : "More filters"}
-            </Button>
-          </div>
+          <PersonToggle
+            people={activePeople}
+            value={filters.person}
+            onChange={(person) => setFilters({ ...filters, person })}
+          />
 
           <DateRangePicker
             range={{ startDate: filters.startDate, endDate: filters.endDate }}
             onChange={(range: DateRange) => setFilters({ ...filters, ...range })}
           />
-
-          {showMoreFilters ? (
-            <div className="grid gap-4 border-t border-border pt-4 md:grid-cols-2 xl:grid-cols-4">
-              <div className="space-y-2">
-                <Label>Account</Label>
-                <Select
-                  value={filters.accountId || "all"}
-                  onValueChange={(value) =>
-                    setFilters({
-                      ...filters,
-                      accountId: value === "all" ? "" : value,
-                    })
-                  }
-                >
-                  <SelectTrigger><SelectValue placeholder="All accounts" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All accounts</SelectItem>
-                    {accounts.map((account) => (
-                      <SelectItem key={account.id} value={account.id}>
-                        {accountLabel(account)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Tag</Label>
-                <Input
-                  placeholder="e.g. Vacation"
-                  value={filters.tag}
-                  onChange={(event) =>
-                    setFilters({ ...filters, tag: event.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Min Amount</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="0.00"
-                  value={filters.minAmount}
-                  onChange={(event) =>
-                    setFilters({ ...filters, minAmount: event.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Max Amount</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="No limit"
-                  value={filters.maxAmount}
-                  onChange={(event) =>
-                    setFilters({ ...filters, maxAmount: event.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label>Search</Label>
-                <Input
-                  placeholder="Description or notes"
-                  value={filters.search}
-                  onChange={(event) =>
-                    setFilters({ ...filters, search: event.target.value })
-                  }
-                />
-              </div>
-              <div className="flex items-end md:col-span-2">
-                <Button variant="outline" onClick={() => setFilters(emptyFilters)}>
-                  Reset all filters
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          {chips.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
-              {chips.map((chip) => (
-                <button
-                  key={chip.label}
-                  type="button"
-                  onClick={chip.clear}
-                  className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {chip.label}
-                  <X className="h-3 w-3" />
-                </button>
-              ))}
-            </div>
-          ) : null}
         </CardContent>
       </Card>
 
@@ -548,8 +453,9 @@ export default function SpendingPage() {
       <Card>
         <CardHeader>
           <CardTitle>
-            {selectedCategory ? `${selectedCategory.name} — ` : ""}Transactions (
-            {transactions.length}) · {formatCurrencyPrecise(listedTotal)}
+            {selectedCategory ? `${selectedCategory.name} — ` : ""}Transactions
+            {" · "}
+            {formatCurrencyPrecise(listedTotal)}
           </CardTitle>
           {selectedCategory && data && data.totalSpending > 0 ? (
             <p className="text-sm text-muted-foreground">
@@ -558,13 +464,125 @@ export default function SpendingPage() {
             </p>
           ) : null}
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-1 flex-wrap items-center gap-2">
+            {/* Search is the filter reached for most often, so it stays out
+                of the collapsible panel. */}
+            <div className="relative min-w-[220px] flex-1 sm:max-w-xs">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                aria-label="Search transactions"
+                placeholder="Search description or notes"
+                className="pl-9"
+                value={filters.search}
+                onChange={(event) =>
+                  setFilters({ ...filters, search: event.target.value })
+                }
+              />
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowMoreFilters((open) => !open)}
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              {showMoreFilters ? "Fewer filters" : "More filters"}
+            </Button>
+          </div>
+        </div>
+
+        {showMoreFilters ? (
+          <div className="grid gap-4 border-t border-border pt-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="space-y-2">
+              <Label>Account</Label>
+              <Select
+                value={filters.accountId || "all"}
+                onValueChange={(value) =>
+                  setFilters({
+                    ...filters,
+                    accountId: value === "all" ? "" : value,
+                  })
+                }
+              >
+                <SelectTrigger><SelectValue placeholder="All accounts" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All accounts</SelectItem>
+                  {accounts.map((account) => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {accountLabel(account)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Tag</Label>
+              <Input
+                placeholder="e.g. Vacation"
+                value={filters.tag}
+                onChange={(event) =>
+                  setFilters({ ...filters, tag: event.target.value })
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Min Amount</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                value={filters.minAmount}
+                onChange={(event) =>
+                  setFilters({ ...filters, minAmount: event.target.value })
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Max Amount</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="No limit"
+                value={filters.maxAmount}
+                onChange={(event) =>
+                  setFilters({ ...filters, maxAmount: event.target.value })
+                }
+              />
+            </div>
+            <div className="flex items-end md:col-span-2 xl:col-span-4">
+              <Button variant="outline" onClick={() => setFilters(defaultFilters())}>
+                Reset all filters
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {chips.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
+            {chips.map((chip) => (
+              <button
+                key={chip.label}
+                type="button"
+                onClick={chip.clear}
+                className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {chip.label}
+                <X className="h-3 w-3" />
+              </button>
+            ))}
+          </div>
+        ) : null}
+
           <TransactionsTable
             transactions={transactions}
             people={people}
             categories={categories}
             onChanged={loadDashboard}
             onError={setError}
+            resetKey={toQuery(filters)}
           />
         </CardContent>
       </Card>

@@ -28,11 +28,6 @@ export type RangePreset = {
 // Everything is computed in UTC to match how dates are stored and compared.
 export const RANGE_PRESETS: RangePreset[] = [
   {
-    id: "all",
-    label: "All time",
-    resolve: () => ({ startDate: "", endDate: "" }),
-  },
-  {
     id: "this-month",
     label: "This month",
     resolve: (now) => ({
@@ -80,7 +75,21 @@ export const RANGE_PRESETS: RangePreset[] = [
       endDate: endOfMonth(now.getUTCFullYear() - 1, 11),
     }),
   },
+  {
+    // Last, because it's the escape hatch rather than the everyday view.
+    id: "all",
+    label: "All time",
+    resolve: () => ({ startDate: "", endDate: "" }),
+  },
 ];
+
+/** The range the Spending page opens on. */
+export const DEFAULT_RANGE_PRESET = "last-month";
+
+export function defaultRange(now: Date = new Date()): DateRange {
+  const preset = RANGE_PRESETS.find((entry) => entry.id === DEFAULT_RANGE_PRESET);
+  return preset ? preset.resolve(now) : { startDate: "", endDate: "" };
+}
 
 /** Which preset, if any, the current dates correspond to. */
 export function activePresetId(range: DateRange, now = new Date()): string | null {

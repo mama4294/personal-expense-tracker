@@ -1,7 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, Pencil, Trash2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -36,7 +44,12 @@ import {
   type Person,
   type SplitRow,
 } from "@/components/people/split-editor";
-import { accountLabel, cn, formatCurrencyPrecise } from "@/lib/utils";
+import {
+  accountLabel,
+  cn,
+  formatCurrencyPrecise,
+  formatShortDate,
+} from "@/lib/utils";
 
 export type Transaction = {
   id: string;
@@ -56,6 +69,9 @@ export type Transaction = {
 };
 
 type Option = { id: string; name: string };
+
+/** A year of cards runs to thousands of rows; render a window of them. */
+const PAGE_SIZES = [50, 100, 250] as const;
 
 /** Columns worth ordering by; the rest are free text or derived. */
 type SortKey = "date" | "amount" | "account";
@@ -113,20 +129,36 @@ export function TransactionsTable({
   categories,
   onChanged,
   onError,
+  resetKey,
 }: {
   transactions: Transaction[];
   people: Person[];
   categories: Option[];
   onChanged: () => void | Promise<void>;
   onError: (message: string) => void;
+  /**
+   * Changes whenever the caller's filters change. Editing a row also refetches,
+   * and being thrown back to page 1 for that would be maddening — so paging
+   * resets on a new filter set, not on every new array.
+   */
+  resetKey: string;
 }) {
   const [editing, setEditing] = useState<EditState | null>(null);
   const [saving, setSaving] = useState(false);
   const [sort, setSort] = useState<Sort>({ key: "date", dir: "desc" });
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZES[0]);
+  const [page, setPage] = useState(1);
+  const [seenReset, setSeenReset] = useState(resetKey);
+
+  if (resetKey !== seenReset) {
+    setSeenReset(resetKey);
+    setPage(1);
+  }
 
   const activePeople = people.filter((person) => person.isActive);
 
   function toggleSort(key: SortKey) {
+    setPage(1);
     setSort((current) =>
       current.key === key
         ? { key, dir: current.dir === "asc" ? "desc" : "asc" }
@@ -154,6 +186,13 @@ export function TransactionsTable({
       return a.date.localeCompare(b.date) * direction;
     });
   }, [transactions, sort]);
+
+  // Sort runs over the whole filtered set, then a page is sliced off it, so
+  // "biggest amount" means biggest overall rather than biggest on this page.
+  const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const firstIndex = (currentPage - 1) * pageSize;
+  const visible = sorted.slice(firstIndex, firstIndex + pageSize);
 
   async function saveEdit() {
     if (!editing) return;
@@ -248,10 +287,10 @@ export function TransactionsTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {sorted.map((transaction) => (
+          {visible.map((transaction) => (
             <TableRow key={transaction.id}>
-              <TableCell className="whitespace-nowrap">
-                {transaction.date.slice(0, 10)}
+              <TableCell className="whitespace-nowrap tabular-nums">
+                {formatShortDate(transaction.date)}
               </TableCell>
               <TableCell>
                 <span>{transaction.description}</span>
@@ -333,6 +372,60 @@ export function TransactionsTable({
           ) : null}
         </TableBody>
       </Table>
+
+      {sorted.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3 text-sm">
+          <p className="text-muted-foreground">
+            Showing {firstIndex + 1}&ndash;
+            {Math.min(firstIndex + pageSize, sorted.length)} of {sorted.length}
+          </p>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-muted-foreground">
+              Rows
+              <select
+                aria-label="Rows per page"
+                className="h-9 rounded-lg border border-input bg-card px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                value={pageSize}
+                onChange={(event) => {
+                  setPageSize(Number(event.target.value));
+                  setPage(1);
+                }}
+              >
+                {PAGE_SIZES.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Previous page"
+                disabled={currentPage <= 1}
+                onClick={() => setPage(currentPage - 1)}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="min-w-[6rem] text-center tabular-nums text-muted-foreground">
+                Page {currentPage} of {pageCount}
+              </span>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Next page"
+                disabled={currentPage >= pageCount}
+                onClick={() => setPage(currentPage + 1)}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <Dialog
         open={editing != null}
