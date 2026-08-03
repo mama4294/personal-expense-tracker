@@ -51,6 +51,12 @@ CMD ["sh", "-c", "npx prisma migrate deploy && npx tsx prisma/seed.ts"]
 FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+# Stamped by CI so a running container can say which commit it came from. The
+# fallback keeps a local `docker build` from producing an empty version.
+ARG BUILD_SHA=unknown
+ARG BUILD_TIME=unknown
+ENV BUILD_SHA=$BUILD_SHA
+ENV BUILD_TIME=$BUILD_TIME
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./

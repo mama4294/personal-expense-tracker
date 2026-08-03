@@ -33,6 +33,9 @@ jobs:
           context: .
           target: runner
           push: true
+          build-args: |
+            BUILD_SHA=${{ github.sha }}
+            BUILD_TIME=${{ github.event.repository.updated_at }}
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository }}/app:latest
             ${{ env.REGISTRY }}/${{ github.repository }}/app:${{ github.sha }}

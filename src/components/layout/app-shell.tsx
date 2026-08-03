@@ -25,9 +25,15 @@ const navItems = [
 export function AppShell({
   children,
   userName,
+  version,
+  versionTitle,
 }: {
   children: React.ReactNode;
   userName?: string | null;
+  /** Short commit the running image was built from. */
+  version?: string;
+  /** Full commit, for the tooltip. */
+  versionTitle?: string;
 }) {
   const pathname = usePathname();
 
@@ -67,6 +73,14 @@ export function AppShell({
               </Link>
             );
           })}
+          {version ? (
+            <p
+              title={versionTitle}
+              className="mt-2 hidden px-3 text-xs text-muted-foreground lg:block"
+            >
+              build {version}
+            </p>
+          ) : null}
         </nav>
 
         <main className="min-w-0 space-y-6">{children}</main>

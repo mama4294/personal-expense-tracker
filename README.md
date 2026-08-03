@@ -151,6 +151,29 @@ known secret. Put the app behind your reverse proxy for HTTPS —
 Schema changes apply on rebuild: `docker compose up -d --build` reruns the
 `migrate` service against the existing volume.
 
+## Deploying an update
+
+Pushing to `main` publishes two images to GHCR, tagged `:latest` and
+`:<commit sha>`. **Publishing is not deploying** — the server still has to pull
+them. In Portainer: Stacks -> the stack -> redeploy with *re-pull image* enabled.
+
+To confirm what actually landed, look at **build `<sha>`** under the sidebar
+navigation, or `GET /api/version` while signed in. It comes from a build arg
+baked into the image, so it reports the image rather than the config — if it
+still shows the previous commit, the pull didn't take.
+
+Two traps worth knowing:
+
+- **Never leave `IMAGE_TAG` set** in the stack's environment variables. Compose
+  resolves `app:${IMAGE_TAG:-latest}`, so a pinned SHA makes every future
+  redeploy re-pull that same old image. Pin it only to force a single specific
+  deploy, then remove it.
+- **Watch disk space.** Each deploy adds ~1.8 GB of images, and a full disk fails
+  the pull halfway: the small app image lands, the 1.5 GB migrator doesn't,
+  `compose pull` aborts, and the containers keep running the old image. Remove
+  unused images periodically. Never prune *volumes* — that is where Postgres
+  lives.
+
 ## First run
 
 Sign in with the seeded login — username `ADMIN_USERNAME`, password
