@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Upload } from "lucide-react";
 import { PersonToggle } from "@/components/filters/person-toggle";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,6 +33,7 @@ import {
   type BalanceRow,
 } from "@/components/net-worth/net-worth-dialog";
 import { personColor } from "@/lib/colors";
+import { NetWorthImportDialog } from "@/components/import/financial-import-dialogs";
 import {
   ASSET_LABELS,
   formatCurrency,
@@ -87,6 +88,7 @@ export default function NetWorthPage() {
   const [person, setPerson] = useState("COMBINED");
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [month, setMonth] = useState(currentMonth);
   const [rows, setRows] = useState<BalanceRow[]>([]);
   const [notes, setNotes] = useState("");
@@ -232,6 +234,10 @@ export default function NetWorthPage() {
             value={person}
             onChange={setPerson}
           />
+          <Button variant="outline" onClick={() => setImportOpen(true)}>
+            <Upload className="h-4 w-4" />
+            Import CSV
+          </Button>
           <Button onClick={() => openFor(currentMonth())}>
             <Plus className="h-4 w-4" />
             Add Balances
@@ -478,6 +484,12 @@ export default function NetWorthPage() {
         previousBalances={previousBalances}
         previousMonth={previousMonth}
         onSaved={load}
+      />
+
+      <NetWorthImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={load}
       />
     </div>
   );

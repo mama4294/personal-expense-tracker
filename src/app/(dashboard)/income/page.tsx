@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -30,6 +30,7 @@ import {
 } from "@/components/income/paycheck-dialog";
 import { netIncome } from "@/lib/income";
 import { personColor } from "@/lib/colors";
+import { PaycheckImportDialog } from "@/components/import/financial-import-dialogs";
 import {
   formatCurrency,
   formatCurrencyPrecise,
@@ -88,6 +89,7 @@ export default function IncomePage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [draft, setDraft] = useState<IncomeDraft>(blankIncome);
   const [paycheckOpen, setPaycheckOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [paycheckDraft, setPaycheckDraft] = useState<PaycheckDraft>(() =>
     blankPaycheck(new Date().toISOString().slice(0, 7)),
   );
@@ -257,6 +259,14 @@ export default function IncomePage() {
           >
             <Plus className="h-4 w-4" />
             Other Income
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setImportOpen(true)}
+            disabled={activePeople.length === 0}
+          >
+            <Upload className="h-4 w-4" />
+            Import CSV
           </Button>
           <Button onClick={openAddPaycheck} disabled={activePeople.length === 0}>
             <Plus className="h-4 w-4" />
@@ -536,6 +546,12 @@ export default function IncomePage() {
         onDraftChange={setDraft}
         people={activePeople}
         onSaved={load}
+      />
+
+      <PaycheckImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={load}
       />
     </div>
   );
