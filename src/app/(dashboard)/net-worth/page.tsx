@@ -37,7 +37,6 @@ import { NetWorthImportDialog } from "@/components/import/financial-import-dialo
 import {
   ASSET_LABELS,
   formatCurrency,
-  formatCurrencyPrecise,
   formatMonthLabel,
   LIABILITY_LABELS,
 } from "@/lib/utils";
@@ -288,6 +287,7 @@ export default function NetWorthPage() {
           </CardHeader>
           <CardContent>
             <SimpleLineChart
+              fractionDigits={0}
               data={data?.timeline ?? []}
               xKey="month"
               lines={[
@@ -303,7 +303,8 @@ export default function NetWorthPage() {
             <CardTitle>Asset Allocation</CardTitle>
           </CardHeader>
           <CardContent>
-            <SimplePieChart data={allocation} />
+            <SimplePieChart
+              fractionDigits={0} data={allocation} />
           </CardContent>
         </Card>
 
@@ -318,6 +319,7 @@ export default function NetWorthPage() {
           <CardContent>
             {accountRows.length > 0 ? (
               <GroupedBarChart
+                fractionDigits={0}
                 data={accountRows}
                 xKey="name"
                 series={holderSeries}
@@ -336,6 +338,7 @@ export default function NetWorthPage() {
           </CardHeader>
           <CardContent>
             <SimpleLineChart
+              fractionDigits={0}
               data={data?.timeline ?? []}
               xKey="month"
               lines={[{ key: "assets", color: activeColor, name: "Assets" }]}
@@ -350,6 +353,7 @@ export default function NetWorthPage() {
           </CardHeader>
           <CardContent>
             <SimpleLineChart
+              fractionDigits={0}
               data={data?.timeline ?? []}
               xKey="month"
               lines={[
@@ -401,13 +405,13 @@ export default function NetWorthPage() {
                       </TableCell>
                       <TableCell>{snapshot.balances.length}</TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {formatCurrencyPrecise(assets)}
+                        {formatCurrency(assets)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {formatCurrencyPrecise(liabilities)}
+                        {formatCurrency(liabilities)}
                       </TableCell>
                       <TableCell className="text-right font-medium tabular-nums">
-                        {formatCurrencyPrecise(assets - liabilities)}
+                        {formatCurrency(assets - liabilities)}
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
@@ -447,7 +451,7 @@ export default function NetWorthPage() {
                                   }
                                 >
                                   {balance.liabilityType ? "−" : ""}
-                                  {formatCurrencyPrecise(Number(balance.amount))}
+                                  {formatCurrency(Number(balance.amount))}
                                 </span>
                               </div>
                             ))}

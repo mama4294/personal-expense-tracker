@@ -33,7 +33,6 @@ import { personColor } from "@/lib/colors";
 import { PaycheckImportDialog } from "@/components/import/financial-import-dialogs";
 import {
   formatCurrency,
-  formatCurrencyPrecise,
   formatMonthLabel,
 } from "@/lib/utils";
 
@@ -222,7 +221,7 @@ export default function IncomePage() {
   async function handleDelete(entry: IncomeEntry) {
     if (
       !window.confirm(
-        `Delete ${entry.source} for ${formatCurrencyPrecise(Number(entry.amount))}?`,
+        `Delete ${entry.source} for ${formatCurrency(Number(entry.amount))}?`,
       )
     ) {
       return;
@@ -316,6 +315,7 @@ export default function IncomePage() {
           </CardHeader>
           <CardContent>
             <SimpleBarChart
+              fractionDigits={0}
               data={data?.monthlyIncome ?? []}
               xKey="month"
               yKey="total"
@@ -331,6 +331,7 @@ export default function IncomePage() {
           </CardHeader>
           <CardContent>
             <SimpleBarChart
+              fractionDigits={0}
               data={data?.annualIncome ?? []}
               xKey="year"
               yKey="total"
@@ -345,6 +346,7 @@ export default function IncomePage() {
           </CardHeader>
           <CardContent>
             <SimpleBarChart
+              fractionDigits={0}
               data={data?.incomeByPerson ?? []}
               xKey="name"
               yKey="total"
@@ -360,6 +362,7 @@ export default function IncomePage() {
           </CardHeader>
           <CardContent>
             <SimpleLineChart
+              fractionDigits={0}
               data={data?.incomeVsExpenses ?? []}
               xKey="month"
               lines={[
@@ -411,22 +414,22 @@ export default function IncomePage() {
                       {formatCurrency(Number(entry.annualSalary))}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {formatCurrencyPrecise(values.grossIncome)}
+                      {formatCurrency(values.grossIncome)}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {formatCurrencyPrecise(values.taxes)}
+                      {formatCurrency(values.taxes)}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {formatCurrencyPrecise(values.retirement401k)}
+                      {formatCurrency(values.retirement401k)}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {formatCurrencyPrecise(values.hsa)}
+                      {formatCurrency(values.hsa)}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {formatCurrencyPrecise(values.medical + values.dentalVision)}
+                      {formatCurrency(values.medical + values.dentalVision)}
                     </TableCell>
                     <TableCell className="text-right font-medium tabular-nums">
-                      {formatCurrencyPrecise(netIncome(values))}
+                      {formatCurrency(netIncome(values))}
                     </TableCell>
                     <TableCell className="text-right">
                       <span className="flex justify-end gap-1">
@@ -493,7 +496,7 @@ export default function IncomePage() {
                   <TableCell>{entry.description ?? "—"}</TableCell>
                   <TableCell>{entry.person.name}</TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {formatCurrencyPrecise(Number(entry.amount))}
+                    {formatCurrency(Number(entry.amount))}
                   </TableCell>
                   <TableCell className="text-right">
                     <span className="flex justify-end gap-1">

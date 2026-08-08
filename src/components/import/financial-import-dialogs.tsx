@@ -7,7 +7,7 @@ import {
 import { Badge } from "@/components/ui/table";
 import {
   ASSET_LABELS,
-  formatCurrencyPrecise,
+  formatCurrency,
   formatMonthLabel,
   LIABILITY_LABELS,
 } from "@/lib/utils";
@@ -62,18 +62,18 @@ export function PaycheckImportDialog({
         {
           header: "Gross",
           align: "right",
-          render: (row) => formatCurrencyPrecise(row.grossIncome),
+          render: (row) => formatCurrency(row.grossIncome),
         },
         {
           header: "Taxes",
           align: "right",
-          render: (row) => formatCurrencyPrecise(row.taxes),
+          render: (row) => formatCurrency(row.taxes),
         },
         {
           header: "401k / HSA",
           align: "right",
           render: (row) =>
-            formatCurrencyPrecise(row.retirement401k + row.hsa),
+            formatCurrency(row.retirement401k + row.hsa),
         },
       ]}
     />
@@ -137,7 +137,7 @@ export function NetWorthImportDialog({
         {
           header: "Amount",
           align: "right",
-          render: (row) => formatCurrencyPrecise(row.amount),
+          render: (row) => formatCurrency(row.amount),
         },
       ]}
     />

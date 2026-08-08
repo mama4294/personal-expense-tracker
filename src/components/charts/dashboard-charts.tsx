@@ -44,9 +44,19 @@ const TICK_COLOR = "#64748b";
 
 export type ValueFormat = "currency" | "percent";
 
-function formatValue(value: number, format: ValueFormat): string {
-  return format === "percent"
-    ? `${value.toFixed(1)}%`
+/**
+ * Tooltips carry cents by default because a single transaction's amount is
+ * meaningful to the cent. Pages that deal in monthly and yearly totals pass
+ * fractionDigits={0} — cents on a $363,772 balance are noise.
+ */
+function formatValue(
+  value: number,
+  format: ValueFormat,
+  fractionDigits: 0 | 2 = 2,
+): string {
+  if (format === "percent") return `${value.toFixed(1)}%`;
+  return fractionDigits === 0
+    ? formatCurrency(value)
     : formatCurrencyPrecise(value);
 }
 
@@ -71,6 +81,7 @@ export function SimpleBarChart({
   xKey,
   yKey,
   valueFormat = "currency",
+  fractionDigits,
   name,
   color,
   colorByLabel,
@@ -82,6 +93,8 @@ export function SimpleBarChart({
   xKey: string;
   yKey: string;
   valueFormat?: ValueFormat;
+  /** 0 drops the cents; defaults to 2. */
+  fractionDigits?: 0 | 2;
   name?: string;
   /** Overrides the series colour — used to match the selected person. */
   color?: string;
@@ -111,7 +124,7 @@ export function SimpleBarChart({
         <Tooltip
           contentStyle={tooltipStyle}
           cursor={{ fill: "rgba(15, 23, 42, 0.04)" }}
-          formatter={(value) => formatValue(Number(value), valueFormat)}
+          formatter={(value) => formatValue(Number(value), valueFormat, fractionDigits)}
           labelFormatter={(label) =>
             xTickFormatter ? xTickFormatter(String(label)) : String(label)
           }
@@ -167,12 +180,15 @@ export function GroupedBarChart({
   xKey,
   series,
   valueFormat = "currency",
+  fractionDigits,
   xTickFormatter,
 }: {
   data: Record<string, string | number>[];
   xKey: string;
   series: { key: string; color: string; name: string }[];
   valueFormat?: ValueFormat;
+  /** 0 drops the cents; defaults to 2. */
+  fractionDigits?: 0 | 2;
   xTickFormatter?: (value: string) => string;
 }) {
   return (
@@ -194,7 +210,7 @@ export function GroupedBarChart({
         <Tooltip
           contentStyle={tooltipStyle}
           cursor={{ fill: "rgba(15, 23, 42, 0.04)" }}
-          formatter={(value) => formatValue(Number(value), valueFormat)}
+          formatter={(value) => formatValue(Number(value), valueFormat, fractionDigits)}
           labelFormatter={(label) =>
             xTickFormatter ? xTickFormatter(String(label)) : String(label)
           }
@@ -221,12 +237,15 @@ export function SimpleLineChart({
   xKey,
   lines,
   valueFormat = "currency",
+  fractionDigits,
   xTickFormatter,
 }: {
   data: Record<string, string | number>[];
   xKey: string;
   lines: { key: string; color: string; name: string }[];
   valueFormat?: ValueFormat;
+  /** 0 drops the cents; defaults to 2. */
+  fractionDigits?: 0 | 2;
   /** Formats the x-axis labels without changing the underlying data keys. */
   xTickFormatter?: (value: string) => string;
 }) {
@@ -247,7 +266,7 @@ export function SimpleLineChart({
         />
         <Tooltip
           contentStyle={tooltipStyle}
-          formatter={(value) => formatValue(Number(value), valueFormat)}
+          formatter={(value) => formatValue(Number(value), valueFormat, fractionDigits)}
           labelFormatter={(label) =>
             xTickFormatter ? xTickFormatter(String(label)) : String(label)
           }
@@ -281,8 +300,11 @@ export function SimplePieChart({
   data,
   onSelect,
   selected,
+  fractionDigits,
 }: {
   data: { name: string; total: number }[];
+  /** 0 drops the cents; defaults to 2. */
+  fractionDigits?: 0 | 2;
   /** Makes slices clickable; receives the slice label that was hit. */
   onSelect?: (label: string) => void;
   selected?: string | null;
@@ -335,7 +357,9 @@ export function SimplePieChart({
         </Pie>
         <Tooltip
           contentStyle={tooltipStyle}
-          formatter={(value) => formatCurrencyPrecise(Number(value))}
+          formatter={(value) =>
+            formatValue(Number(value), "currency", fractionDigits)
+          }
         />
         <Legend iconType="circle" />
       </PieChart>

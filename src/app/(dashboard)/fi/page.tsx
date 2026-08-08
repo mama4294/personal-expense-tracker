@@ -132,6 +132,7 @@ export default function FiPage() {
           </CardHeader>
           <CardContent>
             <SimpleLineChart
+              fractionDigits={0}
               data={(data?.history ?? []).map((item) => ({
                 month: item.month,
                 progress: Number((item.progress * 100).toFixed(1)),
@@ -152,6 +153,7 @@ export default function FiPage() {
           </CardHeader>
           <CardContent>
             <SimpleLineChart
+              fractionDigits={0}
               data={data?.history ?? []}
               xKey="month"
               lines={[

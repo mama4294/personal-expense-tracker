@@ -2,7 +2,7 @@
 
 import { Layer, Rectangle, ResponsiveContainer, Sankey, Tooltip } from "recharts";
 import { SERIES_COLORS } from "@/components/charts/dashboard-charts";
-import { formatCurrency, formatCurrencyPrecise } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 
 export type SankeyInput = {
   grossIncome: number;
@@ -262,7 +262,7 @@ export function CashFlowSankey({
         }
       >
         <Tooltip
-          formatter={(value) => formatCurrencyPrecise(Number(value))}
+          formatter={(value) => formatCurrency(Number(value))}
           contentStyle={{
             borderRadius: 12,
             border: "1px solid #e2e8f0",

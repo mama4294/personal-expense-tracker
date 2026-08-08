@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DEDUCTION_FIELDS, netIncome, totalDeductions } from "@/lib/income";
-import { cn, formatCurrencyPrecise } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 
 export type PaycheckDraft = {
   month: string;
@@ -255,7 +255,7 @@ export function PaycheckDialog({
                     })
                   }
                 >
-                  Use {formatCurrencyPrecise(suggestedGross)} (salary ÷ 12)
+                  Use {formatCurrency(suggestedGross)} (salary ÷ 12)
                 </button>
               ) : null}
             </div>
@@ -288,8 +288,8 @@ export function PaycheckDialog({
           <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <span className="text-muted-foreground">
-                Net = Gross {formatCurrencyPrecise(paycheck.grossIncome)} −
-                Deductions {formatCurrencyPrecise(deductions)}
+                Net = Gross {formatCurrency(paycheck.grossIncome)} −
+                Deductions {formatCurrency(deductions)}
               </span>
               <span
                 className={cn(
@@ -297,7 +297,7 @@ export function PaycheckDialog({
                   overDrawn ? "text-destructive" : "text-foreground",
                 )}
               >
-                Net {formatCurrencyPrecise(net)}
+                Net {formatCurrency(net)}
               </span>
             </div>
           </div>

@@ -22,7 +22,6 @@ import { personColor } from "@/lib/colors";
 import {
   cn,
   formatCurrency,
-  formatCurrencyPrecise,
   formatMonthLabel,
   formatPercent,
 } from "@/lib/utils";
@@ -216,25 +215,25 @@ export default function CashFlowPage() {
                     )}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {formatCurrencyPrecise(row.grossIncome)}
+                    {formatCurrency(row.grossIncome)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums text-muted-foreground">
                     {row.otherIncome > 0
-                      ? formatCurrencyPrecise(row.otherIncome)
+                      ? formatCurrency(row.otherIncome)
                       : "—"}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {formatCurrencyPrecise(row.netIncome)}
+                    {formatCurrency(row.netIncome)}
                   </TableCell>
 
                   <TableCell className="text-right tabular-nums">
-                    {formatCurrencyPrecise(row.retirement401k)}
+                    {formatCurrency(row.retirement401k)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {formatCurrencyPrecise(row.hsa)}
+                    {formatCurrency(row.hsa)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {formatCurrencyPrecise(row.expenses)}
+                    {formatCurrency(row.expenses)}
                   </TableCell>
                   <TableCell
                     className={cn(
@@ -242,7 +241,7 @@ export default function CashFlowPage() {
                       row.savings < 0 && "text-destructive",
                     )}
                   >
-                    {formatCurrencyPrecise(row.savings)}
+                    {formatCurrency(row.savings)}
                   </TableCell>
                   <TableCell
                     className={cn(
