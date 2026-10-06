@@ -39,13 +39,17 @@ export function createImportHash(
   return createHash("sha256").update(normalized).digest("hex");
 }
 
+/** Signed amount: positive spend, negative refund/credit. Supports (50) notation. */
 export function parseAmount(raw: string): number {
-  const cleaned = raw.replace(/[$,\s]/g, "");
+  const trimmed = raw.trim();
+  const negative = /^\(.*\)$/.test(trimmed);
+  const cleaned = trimmed.replace(/[()$,\s]/g, "");
   const value = Number.parseFloat(cleaned);
   if (Number.isNaN(value)) {
     throw new Error(`Invalid amount: ${raw}`);
   }
-  return Math.abs(value);
+  if (negative) return -Math.abs(value);
+  return value;
 }
 
 export function parseCsvContent(content: string): ParsedImportRow[] {

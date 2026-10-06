@@ -267,9 +267,9 @@ show that person's share, not the full household amount.
   means they fall back to an even split across active people.
 - `Category` is matched case-insensitively; unknown categories are created.
 - `Tags` is a comma-separated list.
-- `Amount` is read as a magnitude, so both positive and negative export
-  conventions record the same expense. Refunds and credits therefore import as
-  spending — adjust those rows after import.
+- `Amount` keeps its sign: positive for purchases, negative for refunds and
+  credits (parentheses like `(50.00)` count as negative). Spending charts and
+  cash flow net refunds against other expenses in that month.
 - Duplicate detection compares date, account, description, and amount, both
   against existing transactions and within the uploaded batch.
 
