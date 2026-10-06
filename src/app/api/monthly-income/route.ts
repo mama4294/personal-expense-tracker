@@ -2,8 +2,12 @@ import { requireAuth, jsonOk, jsonError, jsonDbError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { z } from "zod";
 
+const dateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must look like 2026-07-15.");
+
 const paycheckSchema = z.object({
-  month: z.string().regex(/^\d{4}-\d{2}$/, "Month must look like 2026-07."),
+  date: dateSchema,
   personId: z.string().min(1),
   /// Omitted or null for households that haven't set up companies yet.
   companyId: z.string().nullish(),
@@ -28,7 +32,7 @@ export async function GET() {
 
   const entries = await db.monthlyIncome.findMany({
     include,
-    orderBy: [{ month: "desc" }, { personId: "asc" }],
+    orderBy: [{ date: "desc" }, { personId: "asc" }],
   });
 
   return jsonOk(entries);
@@ -43,7 +47,7 @@ export async function POST(request: Request) {
     return jsonError(parsed.error.issues[0]?.message ?? "Invalid paycheck");
   }
 
-  const { month, personId, companyId, notes, ...amounts } = parsed.data;
+  const { date, personId, companyId, notes, ...amounts } = parsed.data;
 
   const deductions =
     amounts.medical +
@@ -66,27 +70,14 @@ export async function POST(request: Request) {
     }
   }
 
-  const monthDate = new Date(`${month}-01T00:00:00.000Z`);
+  const payDate = new Date(`${date}T00:00:00.000Z`);
   const data = { ...amounts, notes };
 
   try {
-    // Matched by hand rather than upsert: the unique key includes a nullable
-    // companyId, and SQL treats NULLs as distinct, so an upsert would happily
-    // insert a second company-less paycheck for the same month.
-    const existing = await db.monthlyIncome.findFirst({
-      where: { month: monthDate, personId, companyId: companyId ?? null },
+    const entry = await db.monthlyIncome.create({
+      data: { date: payDate, personId, companyId: companyId ?? null, ...data },
+      include,
     });
-
-    const entry = existing
-      ? await db.monthlyIncome.update({
-          where: { id: existing.id },
-          data,
-          include,
-        })
-      : await db.monthlyIncome.create({
-          data: { month: monthDate, personId, companyId: companyId ?? null, ...data },
-          include,
-        });
 
     return jsonOk(entry, 201);
   } catch (saveError) {

@@ -1,6 +1,6 @@
 import { requireAuth, jsonOk, jsonError } from "@/lib/api";
 import { db } from "@/lib/db";
-import { parseMonth, parsePaycheckCsv } from "@/lib/import-financials";
+import { parsePaycheckCsv, parsePaycheckDate } from "@/lib/import-financials";
 
 export async function POST(request: Request) {
   const { error } = await requireAuth();
@@ -17,7 +17,7 @@ export async function POST(request: Request) {
       db.person.findMany({ select: { id: true, name: true, isActive: true } }),
       db.company.findMany({ select: { id: true, name: true, personId: true } }),
       db.monthlyIncome.findMany({
-        select: { month: true, personId: true, companyId: true },
+        select: { date: true, personId: true, companyId: true },
       }),
     ]);
 
@@ -35,14 +35,12 @@ export async function POST(request: Request) {
     const existingKeys = new Set(
       existing.map(
         (entry) =>
-          `${entry.month.toISOString().slice(0, 7)}|${entry.personId}|${entry.companyId ?? ""}`,
+          `${entry.date.toISOString().slice(0, 10)}|${entry.personId}|${entry.companyId ?? ""}`,
       ),
     );
 
     const warnings: string[] = [];
     const newCompanies = new Set<string>();
-    // A file that lists the same person, company and month twice would upsert
-    // over itself; flag it rather than silently keeping the last one.
     const seen = new Set<string>();
 
     const preview = rows.map((row) => {
@@ -71,7 +69,7 @@ export async function POST(request: Request) {
       const companyNew = Boolean(row.company) && !company;
       if (companyNew) newCompanies.add(`${row.company} (${person.name})`);
 
-      const key = `${row.month}|${person.id}|${company?.id ?? ""}`;
+      const key = `${row.date}|${person.id}|${company?.id ?? ""}`;
       const duplicateInFile = seen.has(key);
       seen.add(key);
 
@@ -79,7 +77,7 @@ export async function POST(request: Request) {
         return {
           ...row,
           status: "error" as const,
-          error: "Another row in this file already covers that month and company.",
+          error: "Another row in this file already covers that pay date and company.",
           personKnown: true,
           companyNew,
         };
@@ -87,7 +85,6 @@ export async function POST(request: Request) {
 
       return {
         ...row,
-        // A company that doesn't exist yet can't have an existing paycheck.
         status: (existingKeys.has(key) ? "update" : "new") as "update" | "new",
         personKnown: true,
         companyNew,
@@ -100,12 +97,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const months = [...new Set(preview.filter((r) => !r.error).map((r) => r.month))];
-    if (months.length > 0) {
-      // Parsing again is cheap and keeps the sort honest about real dates.
-      months.sort((a, b) => parseMonth(a).key.localeCompare(parseMonth(b).key));
+    const dates = [...new Set(preview.filter((r) => !r.error).map((r) => r.date))];
+    if (dates.length > 0) {
+      dates.sort((a, b) =>
+        parsePaycheckDate(a).key.localeCompare(parsePaycheckDate(b).key),
+      );
       warnings.push(
-        `Covers ${months.length} month${months.length === 1 ? "" : "s"}: ${months[0]} to ${months[months.length - 1]}.`,
+        `Covers ${dates.length} paycheck${dates.length === 1 ? "" : "s"} from ${dates[0]} to ${dates[dates.length - 1]}.`,
       );
     }
 

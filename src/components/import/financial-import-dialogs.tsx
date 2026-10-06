@@ -13,7 +13,7 @@ import {
 } from "@/lib/utils";
 
 type PaycheckPreviewRow = ImportRow & {
-  month: string;
+  date: string;
   person: string;
   company: string;
   grossIncome: number;
@@ -38,14 +38,14 @@ export function PaycheckImportDialog({
       onOpenChange={onOpenChange}
       onImported={onImported}
       title="Import Paychecks"
-      description="One row per person, company and month. A month already recorded is overwritten, so re-importing a corrected file is safe."
-      templateHeader="Month,Person,Company,Annual Salary,Gross,Medical,Dental & Vision,401k,HSA,Taxes,Notes"
+      description="One row per paycheck (pay date, person, and company). The same pay date for the same person and company is overwritten on re-import."
+      templateHeader="Date,Person,Company,Annual Salary,Gross,Medical,Dental & Vision,401k,HSA,Taxes,Notes"
       previewUrl="/api/import/paychecks/preview"
       confirmUrl="/api/import/paychecks/confirm"
       columns={[
         {
-          header: "Month",
-          render: (row) => (row.error ? row.month : formatMonthLabel(row.month)),
+          header: "Date",
+          render: (row) => row.date || "—",
         },
         { header: "Person", render: (row) => row.person || "—" },
         {

@@ -57,7 +57,7 @@ type Company = {
 
 type Paycheck = {
   id: string;
-  month: string;
+  date: string;
   personId: string;
   person: { id: string; name: string };
   companyId: string | null;
@@ -90,7 +90,7 @@ export default function IncomePage() {
   const [paycheckOpen, setPaycheckOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [paycheckDraft, setPaycheckDraft] = useState<PaycheckDraft>(() =>
-    blankPaycheck(new Date().toISOString().slice(0, 7)),
+    blankPaycheck(new Date().toISOString().slice(0, 10)),
   );
   const [message, setMessage] = useState<{ tone: "error" | "ok"; text: string } | null>(
     null,
@@ -149,7 +149,7 @@ export default function IncomePage() {
   function openAddPaycheck() {
     setPaycheckDraft(
       blankPaycheck(
-        new Date().toISOString().slice(0, 7),
+        new Date().toISOString().slice(0, 10),
         activePeople[0]?.id ?? "",
       ),
     );
@@ -158,7 +158,8 @@ export default function IncomePage() {
 
   function openEditPaycheck(paycheck: Paycheck) {
     setPaycheckDraft({
-      month: paycheck.month.slice(0, 7),
+      id: paycheck.id,
+      date: paycheck.date.slice(0, 10),
       personId: paycheck.personId,
       companyId: paycheck.companyId ?? "",
       annualSalary: String(Number(paycheck.annualSalary)),
@@ -175,7 +176,7 @@ export default function IncomePage() {
   async function deletePaycheck(paycheck: Paycheck) {
     if (
       !window.confirm(
-        `Delete the ${formatMonthLabel(paycheck.month)} paycheck for ${paycheck.person.name}?`,
+        `Delete the ${paycheck.date.slice(0, 10)} paycheck for ${paycheck.person.name}?`,
       )
     ) {
       return;
@@ -377,17 +378,18 @@ export default function IncomePage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Monthly Paychecks ({paychecks.length})</CardTitle>
+          <CardTitle>Paychecks ({paychecks.length})</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Gross pay and deductions per person per month. Net is what reached the
-            bank; 401k and HSA are saved rather than spent.
+            One row per pay date. Charts and cash flow combine paychecks by
+            calendar month. Net is what reached the bank; 401k and HSA are saved
+            rather than spent.
           </p>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Month</TableHead>
+                <TableHead>Date</TableHead>
                 <TableHead>Person</TableHead>
                 <TableHead>Company</TableHead>
                 <TableHead className="text-right">Annual Salary</TableHead>
@@ -406,7 +408,7 @@ export default function IncomePage() {
                 return (
                   <TableRow key={entry.id}>
                     <TableCell className="whitespace-nowrap">
-                      {formatMonthLabel(entry.month)}
+                      {entry.date.slice(0, 10)}
                     </TableCell>
                     <TableCell>{entry.person.name}</TableCell>
                     <TableCell>{entry.company?.name ?? "—"}</TableCell>
@@ -436,7 +438,7 @@ export default function IncomePage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          aria-label={`Edit ${formatMonthLabel(entry.month)} paycheck`}
+                          aria-label={`Edit ${entry.date.slice(0, 10)} paycheck`}
                           onClick={() => openEditPaycheck(entry)}
                         >
                           <Pencil className="h-4 w-4" />
@@ -444,7 +446,7 @@ export default function IncomePage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          aria-label={`Delete ${formatMonthLabel(entry.month)} paycheck`}
+                          aria-label={`Delete ${entry.date.slice(0, 10)} paycheck`}
                           onClick={() => deletePaycheck(entry)}
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />

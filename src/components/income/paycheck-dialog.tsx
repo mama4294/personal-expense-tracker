@@ -23,7 +23,8 @@ import { DEDUCTION_FIELDS, netIncome, totalDeductions } from "@/lib/income";
 import { cn, formatCurrency } from "@/lib/utils";
 
 export type PaycheckDraft = {
-  month: string;
+  id?: string;
+  date: string;
   personId: string;
   companyId: string;
   annualSalary: string;
@@ -35,9 +36,9 @@ export type PaycheckDraft = {
   taxes: string;
 };
 
-export function blankPaycheck(month: string, personId = ""): PaycheckDraft {
+export function blankPaycheck(date: string, personId = ""): PaycheckDraft {
   return {
-    month,
+    date,
     personId,
     companyId: "",
     annualSalary: "",
@@ -113,17 +114,22 @@ export function PaycheckDialog({
     setSaving(true);
     setError(null);
 
-    const response = await fetch("/api/monthly-income", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        month: draft.month,
-        personId: draft.personId,
-        companyId: draft.companyId || null,
-        annualSalary: toNumber(draft.annualSalary),
-        ...paycheck,
-      }),
-    });
+    const payload = {
+      date: draft.date,
+      personId: draft.personId,
+      companyId: draft.companyId || null,
+      annualSalary: toNumber(draft.annualSalary),
+      ...paycheck,
+    };
+
+    const response = await fetch(
+      draft.id ? `/api/monthly-income/${draft.id}` : "/api/monthly-income",
+      {
+        method: draft.id ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
 
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
@@ -147,19 +153,21 @@ export function PaycheckDialog({
     >
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Monthly Paycheck</DialogTitle>
-          <DialogDescription>Record income</DialogDescription>
+          <DialogTitle>{draft.id ? "Edit Paycheck" : "Add Paycheck"}</DialogTitle>
+          <DialogDescription>
+            One pay date per record. Cash flow and charts sum paychecks by month.
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={save} className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label>Month</Label>
+              <Label>Pay date</Label>
               <Input
-                type="month"
-                value={draft.month}
+                type="date"
+                value={draft.date}
                 onChange={(event) =>
-                  onDraftChange({ ...draft, month: event.target.value })
+                  onDraftChange({ ...draft, date: event.target.value })
                 }
                 required
               />
@@ -232,7 +240,7 @@ export function PaycheckDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label>Monthly Gross</Label>
+              <Label>Gross pay</Label>
               <Input
                 type="number"
                 step="0.01"

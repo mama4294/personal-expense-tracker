@@ -204,7 +204,7 @@ take a deliberate second click.
    is fine)
 3. Review the preview — new versus duplicate rows, unknown accounts
 4. Confirm the import
-5. Enter the month's paycheck with **Add Paycheck** on the Income page
+5. Enter each paycheck for the month with **Add Paycheck** on the Income page
 6. Enter the month's balances with **Add Balances** on the Net Worth page
 7. Review the dashboards and FI progress
 
@@ -212,11 +212,11 @@ take a deliberate second click.
 
 Income is recorded two ways, and they must not overlap:
 
-- **Paychecks** (Income → Add Paycheck) — one per person *per company* per
-  month: annual salary, monthly gross, and the deductions (taxes, 401k, HSA,
-  medical, dental and vision). Net income is derived, never stored: gross less
-  every deduction. Someone working two jobs records two paychecks a month and
-  cash flow adds them together.
+- **Paychecks** (Income → Add Paycheck) — one row per pay date (person and
+  company): annual salary, gross for that check, and the deductions (taxes,
+  401k, HSA, medical, dental and vision). Net income is derived, never stored:
+  gross less every deduction. Biweekly pay means two rows in the same calendar
+  month; cash flow and charts sum them by month.
 - **Other income** — one-off money that isn't part of a paycheck: dividends,
   side work, gifts. Don't record salary here as well, or it will be counted
   twice.

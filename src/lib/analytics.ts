@@ -305,9 +305,9 @@ export async function getIncomeDashboard(filters: DashboardFilters = {}) {
 
   const paycheckWhere: Prisma.MonthlyIncomeWhereInput = {};
   if (filters.startDate || filters.endDate) {
-    paycheckWhere.month = {};
-    if (filters.startDate) paycheckWhere.month.gte = filters.startDate;
-    if (filters.endDate) paycheckWhere.month.lte = filters.endDate;
+    paycheckWhere.date = {};
+    if (filters.startDate) paycheckWhere.date.gte = filters.startDate;
+    if (filters.endDate) paycheckWhere.date.lte = filters.endDate;
   }
   if (filters.person && filters.person !== "COMBINED") {
     paycheckWhere.personId = filters.person;
@@ -339,7 +339,7 @@ export async function getIncomeDashboard(filters: DashboardFilters = {}) {
       hsa: Number(entry.hsa),
       taxes: Number(entry.taxes),
     });
-    const key = monthKey(entry.month);
+    const key = monthKey(entry.date);
     monthlyMap.set(key, (monthlyMap.get(key) ?? 0) + net);
     personMap.set(entry.person.name, (personMap.get(entry.person.name) ?? 0) + net);
   }
@@ -632,7 +632,7 @@ export async function getCashFlow(person: PersonFilter = "COMBINED") {
 
   const paychecksByMonth = new Map<string, Paycheck>();
   for (const entry of paychecks) {
-    const key = monthKey(entry.month);
+    const key = monthKey(entry.date);
     paychecksByMonth.set(
       key,
       addPaychecks(paychecksByMonth.get(key) ?? emptyPaycheck(), {
@@ -669,7 +669,7 @@ export async function getCashFlow(person: PersonFilter = "COMBINED") {
   type CompanyTotal = { total: number; personId: string };
   const companyByMonth = new Map<string, Map<string, CompanyTotal>>();
   for (const entry of paychecks) {
-    const key = monthKey(entry.month);
+    const key = monthKey(entry.date);
     const byCompany = companyByMonth.get(key) ?? new Map<string, CompanyTotal>();
     const label = companyLabel(entry);
     const running = byCompany.get(label)?.total ?? 0;

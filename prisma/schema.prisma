@@ -73,11 +73,11 @@ model Company {
   @@index([personId])
 }
 
-/// A person's paycheck detail for one month: what they earned gross and where
-/// it went before it hit the bank. Net income is derived, never stored.
+/// One paycheck: gross pay and deductions for a single pay date. Dashboards sum
+/// these by calendar month; net income is derived, never stored.
 model MonthlyIncome {
   id             String   @id @default(cuid())
-  month          DateTime @db.Date
+  date           DateTime @db.Date
   personId       String
   person         Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
   /// Null for paychecks recorded before any company was set up.
@@ -94,9 +94,7 @@ model MonthlyIncome {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  /// One paycheck per company per month — a second job is a second row.
-  @@unique([month, personId, companyId])
-  @@index([month])
+  @@index([date])
   @@index([companyId])
 }
 

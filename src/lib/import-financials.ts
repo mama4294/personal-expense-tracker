@@ -2,9 +2,9 @@ import Papa from "papaparse";
 import { ASSET_LABELS, LIABILITY_LABELS } from "@/lib/utils";
 
 /**
- * Shared shape for the preview/confirm pair. Unlike the transaction import,
- * re-importing a paycheck or a month's balances is an update rather than a
- * duplicate to skip: these are one-per-month records the user is correcting.
+ * Shared shape for the preview/confirm pair. Each CSV row is one paycheck;
+ * re-importing the same pay date for the same person and company updates that
+ * row rather than creating a duplicate.
  */
 export type RowStatus = "new" | "update" | "error";
 
@@ -84,6 +84,26 @@ export function parseMonth(raw: string): { key: string; date: Date } {
   return { key: `${year}-${month}`, date };
 }
 
+/**
+ * Pay date as YYYY-MM-DD, or YYYY-MM (stored as the first of that month).
+ * Matches how paycheck forms and imports normalise dates in UTC.
+ */
+export function parsePaycheckDate(raw: string): { key: string; date: Date } {
+  const trimmed = raw.trim();
+  const full = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (full) {
+    const date = new Date(`${trimmed}T00:00:00.000Z`);
+    if (Number.isNaN(date.getTime())) {
+      throw new Error(`Invalid date: "${raw}"`);
+    }
+    return { key: trimmed, date };
+  }
+
+  const { date } = parseMonth(trimmed);
+  const key = date.toISOString().slice(0, 10);
+  return { key, date };
+}
+
 // --- net worth account matching ------------------------------------------
 
 /**
@@ -120,7 +140,7 @@ export function knownAccountLabels(): string[] {
 
 export type PaycheckRow = {
   line: number;
-  month: string;
+  date: string;
   person: string;
   company: string;
   annualSalary: number;
@@ -139,7 +159,7 @@ export function parsePaycheckCsv(content: string): PaycheckRow[] {
     const line = index + 2;
     const base = {
       line,
-      month: field(row, "month", "date"),
+      date: field(row, "date", "month", "pay date", "paydate"),
       person: field(row, "person", "name"),
       company: field(row, "company", "employer"),
       annualSalary: 0,
@@ -154,14 +174,14 @@ export function parsePaycheckCsv(content: string): PaycheckRow[] {
     };
 
     try {
-      if (!base.month) throw new Error("Month is required");
+      if (!base.date) throw new Error("Date is required");
       if (!base.person) throw new Error("Person is required");
 
-      const { key } = parseMonth(base.month);
+      const { key } = parsePaycheckDate(base.date);
 
       return {
         ...base,
-        month: key,
+        date: key,
         annualSalary: parseMoney(
           field(row, "annual salary", "annualsalary", "salary"),
           "Annual Salary",

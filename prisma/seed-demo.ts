@@ -370,7 +370,7 @@ async function main() {
   ];
 
   for (let monthsBack = 11; monthsBack >= 0; monthsBack -= 1) {
-    const month = utcDate(now.getUTCFullYear(), now.getUTCMonth() - monthsBack, 1);
+    const payDate = utcDate(now.getUTCFullYear(), now.getUTCMonth() - monthsBack, 15);
 
     for (const job of jobs) {
       const bonus =
@@ -379,13 +379,13 @@ async function main() {
       const companyId = companies[job.company];
 
       const existing = await db.monthlyIncome.findFirst({
-        where: { month, personId: job.person.id, companyId },
+        where: { date: payDate, personId: job.person.id, companyId },
       });
       if (existing) continue;
 
       await db.monthlyIncome.create({
         data: {
-          month,
+          date: payDate,
           personId: job.person.id,
           companyId,
           annualSalary: job.annualSalary,

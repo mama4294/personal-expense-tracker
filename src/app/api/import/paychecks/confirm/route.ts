@@ -1,6 +1,6 @@
 import { requireAuth, jsonOk, jsonError, jsonDbError } from "@/lib/api";
 import { db } from "@/lib/db";
-import { parseMonth, parsePaycheckCsv } from "@/lib/import-financials";
+import { parsePaycheckCsv, parsePaycheckDate } from "@/lib/import-financials";
 
 export async function POST(request: Request) {
   const { error } = await requireAuth();
@@ -25,8 +25,6 @@ export async function POST(request: Request) {
     let created = 0;
     let updated = 0;
 
-    // One transaction: a half-applied set of paychecks would quietly skew every
-    // cash-flow figure, and the user has no way to tell which rows landed.
     await db.$transaction(async (tx) => {
       const companies = await tx.company.findMany({
         select: { id: true, name: true, personId: true },
@@ -68,12 +66,9 @@ export async function POST(request: Request) {
           notes: row.notes || null,
         };
 
-        // Postgres treats NULLs as distinct in a unique index, so the
-        // (month, personId, companyId) key can't be upserted when there is no
-        // company. Look it up first instead of relying on the constraint.
-        const month = parseMonth(row.month).date;
+        const date = parsePaycheckDate(row.date).date;
         const existing = await tx.monthlyIncome.findFirst({
-          where: { month, personId: person.id, companyId },
+          where: { date, personId: person.id, companyId },
           select: { id: true },
         });
 
@@ -82,7 +77,7 @@ export async function POST(request: Request) {
           updated += 1;
         } else {
           await tx.monthlyIncome.create({
-            data: { ...data, month, personId: person.id, companyId },
+            data: { ...data, date, personId: person.id, companyId },
           });
           created += 1;
         }

@@ -45,5 +45,26 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  studio:
+    image: node:22-alpine
+    working_dir: /workspace
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://finance:${POSTGRES_PASSWORD:-finance}@db:5432/finance
+    ports:
+      - "127.0.0.1:5555:5555"
+    volumes:
+      - studio_source:/workspace
+    command: >
+      sh -c "apk add --no-cache git openssl &&
+      if [ ! -f package.json ]; then
+        git clone https://github.com/mama4294/personal-expense-tracker.git .;
+      fi &&
+      npm ci &&
+      npx prisma studio --hostname 0.0.0.0 --port 5555"
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   postgres_data:
