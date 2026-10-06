@@ -52,16 +52,18 @@ services:
     environment:
       DATABASE_URL: postgresql://finance:${POSTGRES_PASSWORD:-finance}@db:5432/finance
     ports:
-      - "127.0.0.1:5555:5555"
+      - "5555:5555"
     volumes:
       - studio_source:/workspace
     command: >
-      sh -c "apk add --no-cache git openssl &&
-      if [ ! -f package.json ]; then
-        git clone https://github.com/mama4294/personal-expense-tracker.git .;
-      fi &&
-      npm ci &&
-      npx prisma studio --hostname 0.0.0.0 --port 5555"
+      sh -c "
+        apk add --no-cache git openssl &&
+        if [ ! -f package.json ]; then
+          git clone https://github.com/mama4294/personal-expense-tracker.git .;
+        fi &&
+        npm ci &&
+        npx prisma studio --url=$$DATABASE_URL --hostname=0.0.0.0 --port=5555 --browser=none
+      "
     depends_on:
       db:
         condition: service_healthy
