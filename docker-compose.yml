@@ -68,3 +68,4 @@ services:
 
 volumes:
   postgres_data:
+  studio_source:
