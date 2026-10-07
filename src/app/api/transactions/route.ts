@@ -10,7 +10,7 @@ import { z } from "zod";
 
 const transactionSchema = z.object({
   date: z.string(),
-  amount: z.number().positive(),
+  amount: z.number().negative(),
   description: z.string().min(1),
   notes: z.string().optional(),
   categoryId: z.string().optional(),

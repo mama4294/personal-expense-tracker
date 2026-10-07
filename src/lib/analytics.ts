@@ -223,24 +223,24 @@ export async function getSpendingDashboard(filters: DashboardFilters = {}) {
     const monthKey = `${transaction.date.getUTCFullYear()}-${String(transaction.date.getUTCMonth() + 1).padStart(2, "0")}`;
     monthlyMap.set(
       monthKey,
-      (monthlyMap.get(monthKey) ?? 0) + transaction.filteredAmount,
+      (monthlyMap.get(monthKey) ?? 0) - transaction.filteredAmount,
     );
 
     const categoryName = transaction.category?.name ?? "Uncategorized";
     categoryMap.set(
       categoryName,
-      (categoryMap.get(categoryName) ?? 0) + transaction.filteredAmount,
+      (categoryMap.get(categoryName) ?? 0) - transaction.filteredAmount,
     );
 
     // The chart is labelled the way the account is labelled everywhere else.
     const accountName = accountLabel(transaction.account);
     accountMap.set(
       accountName,
-      (accountMap.get(accountName) ?? 0) + transaction.filteredAmount,
+      (accountMap.get(accountName) ?? 0) - transaction.filteredAmount,
     );
 
     for (const [personId, personAmount] of Object.entries(transaction.amounts)) {
-      personTotals.set(personId, (personTotals.get(personId) ?? 0) + personAmount);
+      personTotals.set(personId, (personTotals.get(personId) ?? 0) - personAmount);
     }
   }
 
@@ -268,7 +268,7 @@ export async function getSpendingDashboard(filters: DashboardFilters = {}) {
   const personNames = new Map(people.map((entry) => [entry.id, entry.name]));
 
   return {
-    totalSpending: mapped.reduce((sum, tx) => sum + tx.filteredAmount, 0),
+    totalSpending: mapped.reduce((sum, tx) => sum - tx.filteredAmount, 0),
     projectedAnnualSpend,
     projectionMonths: basis.length,
     monthlySpending,
@@ -524,7 +524,7 @@ export async function getFiDashboard(person: PersonFilter = "COMBINED") {
     person,
   ).map((transaction) => ({
     date: transaction.date,
-    amount: transaction.filteredAmount,
+    amount: -transaction.filteredAmount,
     categoryId: transaction.categoryId,
   }));
 
@@ -621,12 +621,12 @@ export async function getCashFlow(person: PersonFilter = "COMBINED") {
     const key = monthKey(transaction.date);
     expensesByMonth.set(
       key,
-      (expensesByMonth.get(key) ?? 0) + transaction.filteredAmount,
+      (expensesByMonth.get(key) ?? 0) - transaction.filteredAmount,
     );
 
     const categories = categoriesByMonth.get(key) ?? new Map<string, number>();
     const name = transaction.category?.name ?? "Uncategorized";
-    categories.set(name, (categories.get(name) ?? 0) + transaction.filteredAmount);
+    categories.set(name, (categories.get(name) ?? 0) - transaction.filteredAmount);
     categoriesByMonth.set(key, categories);
   }
 

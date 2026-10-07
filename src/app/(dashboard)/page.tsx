@@ -210,7 +210,7 @@ export default function SpendingPage() {
   // Sum the filtered share, so the header agrees with the charts when a single
   // person is selected rather than totalling everyone's amounts.
   const listedTotal = transactions.reduce(
-    (sum, transaction) => sum + transaction.filteredAmount,
+    (sum, transaction) => sum - transaction.filteredAmount,
     0,
   );
 

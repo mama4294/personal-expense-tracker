@@ -97,7 +97,7 @@ export function ExpenseDialog({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         date: form.date,
-        amount: Number(form.amount),
+        amount: -Math.abs(Number(form.amount)),
         description: form.description,
         notes: form.notes || undefined,
         categoryId: form.categoryId || undefined,
@@ -146,7 +146,7 @@ export function ExpenseDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label>Amount</Label>
+            <Label>Expense amount</Label>
             <Input
               type="number"
               step="0.01"

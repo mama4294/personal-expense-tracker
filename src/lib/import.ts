@@ -39,7 +39,7 @@ export function createImportHash(
   return createHash("sha256").update(normalized).digest("hex");
 }
 
-/** Signed amount: positive spend, negative refund/credit. Supports (50) notation. */
+/** Bank-style signed amount: negative spend, positive refund/credit. Supports (50) notation. */
 export function parseAmount(raw: string): number {
   const trimmed = raw.trim();
   const negative = /^\(.*\)$/.test(trimmed);
