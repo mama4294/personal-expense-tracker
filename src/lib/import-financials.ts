@@ -215,6 +215,7 @@ export type NetWorthRow = {
   line: number;
   month: string;
   account: string;
+  accountName: string;
   /** Resolved enum name, or null when the label didn't match anything. */
   type: string | null;
   kind: "asset" | "liability" | null;
@@ -231,6 +232,7 @@ export function parseNetWorthCsv(content: string): NetWorthRow[] {
       line,
       month: field(row, "month", "date"),
       account,
+      accountName: account,
       type: null as string | null,
       kind: null as "asset" | "liability" | null,
       person: field(row, "person", "owner", "holder"),
@@ -243,14 +245,20 @@ export function parseNetWorthCsv(content: string): NetWorthRow[] {
       if (!account) throw new Error("Account is required");
 
       const { key } = parseMonth(base.month);
-      const matched = matchAccountType(account);
-      if (!matched) throw new Error(`Unknown account type "${account}"`);
+      const category = field(row, "account type", "category", "type");
+      const matched = matchAccountType(category || account);
+      if (!matched) {
+        throw new Error(
+          `Unknown account type for "${account}". Add an Account Type column (for example, Brokerage).`,
+        );
+      }
 
       return {
         ...base,
         month: key,
         type: matched.type,
         kind: matched.kind,
+        accountName: account,
         // Liabilities are stored positive; a CSV exported with them negative
         // means the same thing, so take the magnitude rather than rejecting it.
         amount: Math.abs(parseMoney(field(row, "amount", "value", "balance"), "Amount")),

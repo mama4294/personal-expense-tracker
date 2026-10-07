@@ -4,6 +4,7 @@ import { z } from "zod";
 
 const balanceSchema = z
   .object({
+    accountName: z.string().trim().min(1, "Account name is required"),
     assetType: z
       .enum([
         "CHECKING",
@@ -63,6 +64,7 @@ export async function POST(request: Request) {
     assetType: balance.assetType,
     liabilityType: balance.liabilityType,
     amount: balance.amount,
+    accountName: balance.accountName,
     personId: balance.personId ?? null,
   }));
 

@@ -48,6 +48,7 @@ type Balance = {
   assetType: string | null;
   liabilityType: string | null;
   amount: string;
+  accountName: string;
   personId: string | null;
   person: { id: string; name: string } | null;
 };
@@ -165,7 +166,7 @@ export default function NetWorthPage() {
         ? Object.fromEntries(
             previous.balances.map((balance) => [
               balanceKey(
-                (balance.assetType ?? balance.liabilityType) as string,
+                balance.accountName || ASSET_LABELS[balance.assetType ?? ""] || LIABILITY_LABELS[balance.liabilityType ?? ""],
                 balance.personId ?? COMBINED,
               ),
               Number(balance.amount),
@@ -203,7 +204,7 @@ export default function NetWorthPage() {
 
   const accountRows = (data?.accountsByPerson ?? []).map((row) => ({
     ...row,
-    name: ASSET_LABELS[String(row.name)] ?? String(row.name),
+    name: String(row.name),
   }));
 
   // Jointly held accounts belong to no one, so they get the neutral slot
@@ -433,9 +434,9 @@ export default function NetWorthPage() {
                                 className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2 text-sm"
                               >
                                 <span>
-                                  {balance.assetType
+                                  {balance.accountName || (balance.assetType
                                     ? ASSET_LABELS[balance.assetType]
-                                    : LIABILITY_LABELS[balance.liabilityType ?? ""]}
+                                    : LIABILITY_LABELS[balance.liabilityType ?? ""])}
                                   <Badge
                                     variant={balance.person ? "default" : "outline"}
                                     className="ml-2"

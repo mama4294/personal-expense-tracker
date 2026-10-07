@@ -60,6 +60,7 @@ export type BalanceRow = {
   key: string;
   kind: "asset" | "liability";
   type: string;
+  accountName: string;
   personId: string;
   amount: string;
 };
@@ -68,12 +69,14 @@ let rowCounter = 0;
 export function newRow(
   kind: "asset" | "liability" = "asset",
   type?: string,
+  accountName?: string,
 ): BalanceRow {
   rowCounter += 1;
   return {
     key: `row-${rowCounter}`,
     kind,
     type: type ?? (kind === "asset" ? ASSET_TYPES[0] : LIABILITY_TYPES[0]),
+    accountName: accountName ?? "",
     personId: COMBINED,
     amount: "",
   };
@@ -88,6 +91,7 @@ export function rowsFromSnapshot(
   balances: {
     assetType: string | null;
     liabilityType: string | null;
+    accountName?: string;
     amount: string | number;
     personId: string | null;
   }[],
@@ -101,6 +105,11 @@ export function rowsFromSnapshot(
       key: `row-${rowCounter}`,
       kind,
       type: (balance.assetType ?? balance.liabilityType) as string,
+      accountName:
+        balance.accountName ||
+        ASSET_LABELS[balance.assetType ?? ""] ||
+        LIABILITY_LABELS[balance.liabilityType ?? ""] ||
+        "",
       personId: balance.personId ?? COMBINED,
       amount: String(Number(balance.amount)),
     };
@@ -125,8 +134,8 @@ function parseAccountValue(value: string): {
 }
 
 /** Keys the previous-month lookup by the account *and* who holds it. */
-export function balanceKey(type: string, personId: string | null) {
-  return `${type}|${personId ?? COMBINED}`;
+export function balanceKey(accountName: string, personId: string | null) {
+  return `${accountName.trim().toLowerCase()}|${personId ?? COMBINED}`;
 }
 
 export function NetWorthDialog({
@@ -176,7 +185,7 @@ export function NetWorthDialog({
     pendingFocus.current = null;
     const row = scrollerRef.current?.querySelector(`[data-row-key="${key}"]`);
     row?.scrollIntoView({ block: "nearest" });
-    row?.querySelector<HTMLElement>('[aria-label="Account type"]')?.focus();
+    row?.querySelector<HTMLElement>('[aria-label="Account name"]')?.focus();
   }, [rows]);
 
   function addRow() {
@@ -226,6 +235,7 @@ export function NetWorthDialog({
           ...(row.kind === "asset"
             ? { assetType: row.type }
             : { liabilityType: row.type }),
+          accountName: row.accountName.trim(),
           amount: Number(row.amount),
           personId: row.personId === COMBINED ? null : row.personId,
         })),
@@ -257,6 +267,9 @@ export function NetWorthDialog({
           <DialogTitle>
             {isExisting ? "Edit Balances" : "Add Balances"}
           </DialogTitle>
+          <p className="text-sm text-muted-foreground">
+            Enter one row per account, such as Vanguard Brokerage or Chase Savings.
+          </p>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -272,8 +285,9 @@ export function NetWorthDialog({
           </div>
 
           <div className="space-y-2">
-            <div className="hidden gap-3 px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground sm:grid sm:grid-cols-[1.2fr_1fr_150px_40px]">
-              <span>Account</span>
+            <div className="hidden gap-3 px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground sm:grid sm:grid-cols-[1.1fr_1.1fr_1fr_140px_40px]">
+              <span>Account type</span>
+              <span>Account name</span>
               <span>Person</span>
               <span>Amount</span>
               <span className="sr-only">Remove</span>
@@ -281,7 +295,7 @@ export function NetWorthDialog({
 
             <div
               ref={scrollerRef}
-              className="max-h-[340px] space-y-2 overflow-y-auto pr-1"
+              className="max-h-[420px] space-y-2 overflow-y-auto pr-1"
             >
               {rows.map((row) => {
                 const previous =
@@ -298,7 +312,7 @@ export function NetWorthDialog({
                   <div
                     key={row.key}
                     data-row-key={row.key}
-                    className="grid gap-3 rounded-lg border border-border p-3 sm:grid-cols-[1.2fr_1fr_150px_40px] sm:items-start sm:border-0 sm:p-1"
+                    className="grid gap-3 rounded-lg border border-border p-3 sm:grid-cols-[1.1fr_1.1fr_1fr_140px_40px] sm:items-start sm:border-0 sm:p-1"
                   >
                     <Select
                       value={accountValue(row.kind, row.type)}
@@ -335,6 +349,16 @@ export function NetWorthDialog({
                         </SelectGroup>
                       </SelectContent>
                     </Select>
+
+                    <Input
+                      placeholder={ASSET_LABELS[row.type] ?? LIABILITY_LABELS[row.type]}
+                      aria-label="Account name"
+                      value={row.accountName}
+                      onChange={(event) =>
+                        updateRow(row.key, { accountName: event.target.value })
+                      }
+                      required
+                    />
 
                     <Select
                       value={row.personId || "combined"}

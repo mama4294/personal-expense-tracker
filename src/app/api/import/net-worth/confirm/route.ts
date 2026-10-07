@@ -53,6 +53,7 @@ export async function POST(request: Request) {
           }
 
           return {
+            accountName: row.accountName,
             assetType:
               row.kind === "asset" ? (row.type as AssetType) : null,
             liabilityType:

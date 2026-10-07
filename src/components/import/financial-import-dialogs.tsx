@@ -104,8 +104,8 @@ export function NetWorthImportDialog({
       onOpenChange={onOpenChange}
       onImported={onImported}
       title="Import Net Worth"
-      description="One row per account, holder and month. Use Combined for jointly held accounts. Each month in the file replaces that month's balances outright."
-      templateHeader="Month,Account,Person,Amount"
+      description="One row per named account, holder and month. Add an Account Type column (such as Brokerage or Savings) to classify it. Use Combined for jointly held accounts. Each month in the file replaces that month's balances outright."
+      templateHeader="Month,Account,Account Type,Person,Amount"
       previewUrl="/api/import/net-worth/preview"
       confirmUrl="/api/import/net-worth/confirm"
       columns={[
@@ -123,7 +123,8 @@ export function NetWorthImportDialog({
                 : LIABILITY_LABELS[row.type];
             return (
               <>
-                {label ?? row.account}
+                {row.account}
+                <span className="ml-1 text-muted-foreground">({label})</span>
                 {row.kind === "liability" ? (
                   <Badge variant="outline" className="ml-2">
                     liability

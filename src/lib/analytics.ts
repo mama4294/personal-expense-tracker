@@ -450,9 +450,9 @@ export async function getNetWorthDashboard(person: PersonFilter = "COMBINED") {
           : "Combined";
         holders.add(holder);
         const account =
-          byAccount.get(balance.assetType) ?? new Map<string, number>();
+          byAccount.get(balance.accountName || balance.assetType) ?? new Map<string, number>();
         account.set(holder, (account.get(holder) ?? 0) + Number(balance.amount));
-        byAccount.set(balance.assetType, account);
+        byAccount.set(balance.accountName || balance.assetType, account);
       }
 
       if (!mine(balance) || !balance.assetType) continue;

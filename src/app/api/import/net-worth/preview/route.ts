@@ -55,7 +55,7 @@ export async function POST(request: Request) {
         };
       }
 
-      const key = `${row.month}|${row.type}|${person?.id ?? ""}`;
+      const key = `${row.month}|${row.accountName.trim().toLowerCase()}|${person?.id ?? ""}`;
       if (seen.has(key)) {
         return {
           ...row,

@@ -213,6 +213,8 @@ model NetWorthBalance {
   assetType     AssetType?
   liabilityType LiabilityType?
   amount        Decimal          @db.Decimal(14, 2)
+  /// User-facing institution/account label, e.g. "Vanguard Brokerage".
+  accountName   String            @default("")
   /// Whose account this is. Null means it belongs to the household jointly.
   personId      String?
   person        Person?          @relation(fields: [personId], references: [id], onDelete: Restrict)
