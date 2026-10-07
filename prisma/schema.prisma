@@ -50,6 +50,7 @@ model Person {
   transactionSplits TransactionSplit[]
   income            Income[]
   netWorthBalances  NetWorthBalance[]
+  netWorthAccounts  NetWorthAccount[]
   monthlyIncome     MonthlyIncome[]
   companies         Company[]
 
@@ -206,6 +207,21 @@ model NetWorthSnapshot {
   updatedAt DateTime          @updatedAt
 }
 
+/// Accounts configured once in Settings and valued in each monthly snapshot.
+model NetWorthAccount {
+  id            String           @id @default(cuid())
+  name          String           @unique
+  assetType     AssetType?
+  liabilityType LiabilityType?
+  personId      String?
+  person        Person?          @relation(fields: [personId], references: [id], onDelete: Restrict)
+  balances      NetWorthBalance[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([personId])
+}
+
 model NetWorthBalance {
   id            String           @id @default(cuid())
   snapshotId    String
@@ -215,6 +231,8 @@ model NetWorthBalance {
   amount        Decimal          @db.Decimal(14, 2)
   /// User-facing institution/account label, e.g. "Vanguard Brokerage".
   accountName   String            @default("")
+  accountId     String?
+  account       NetWorthAccount?  @relation(fields: [accountId], references: [id], onDelete: Restrict)
   /// Whose account this is. Null means it belongs to the household jointly.
   personId      String?
   person        Person?          @relation(fields: [personId], references: [id], onDelete: Restrict)

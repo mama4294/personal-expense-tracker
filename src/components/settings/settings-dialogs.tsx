@@ -28,6 +28,7 @@ import {
   type SplitRow,
 } from "@/components/people/split-editor";
 import { DEFAULT_PERSON_COLOR } from "@/lib/colors";
+import { ASSET_LABELS, LIABILITY_LABELS } from "@/lib/utils";
 
 type SaveResult = { ok: boolean; error?: string };
 
@@ -607,6 +608,111 @@ export function PasswordDialog({
           onChange={(event) => setNew(event.target.value)}
         />
         <p className="text-xs text-muted-foreground">At least 8 characters.</p>
+      </div>
+    </FormDialog>
+  );
+}
+
+// --- Net worth accounts ------------------------------------------------------
+
+const NET_WORTH_ASSETS = Object.keys(ASSET_LABELS);
+const NET_WORTH_LIABILITIES = Object.keys(LIABILITY_LABELS);
+
+export function NetWorthAccountDialog({
+  open,
+  onOpenChange,
+  account,
+  people,
+  onSave,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  account: {
+    id: string;
+    name: string;
+    assetType: string | null;
+    liabilityType: string | null;
+    personId: string | null;
+  } | null;
+  people: { id: string; name: string }[];
+  onSave: (values: {
+    name: string;
+    assetType: string | null;
+    liabilityType: string | null;
+    personId: string | null;
+  }) => Promise<SaveResult>;
+}) {
+  const [name, setName] = useState("");
+  const [kind, setKind] = useState<"asset" | "liability">("asset");
+  const [type, setType] = useState(NET_WORTH_ASSETS[0]);
+  const [personId, setPersonId] = useState("combined");
+  const [seeded, setSeeded] = useState<string | null>(null);
+  const key = account?.id ?? "new";
+  if (open && seeded !== key) {
+    setSeeded(key);
+    const nextKind = account?.liabilityType ? "liability" : "asset";
+    setKind(nextKind);
+    setType(account?.assetType ?? account?.liabilityType ?? NET_WORTH_ASSETS[0]);
+    setName(account?.name ?? "");
+    setPersonId(account?.personId ?? "combined");
+  }
+  if (!open && seeded !== null) setSeeded(null);
+
+  return (
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={account ? "Edit Net Worth Account" : "Add Net Worth Account"}
+      description="Configure each account once. Monthly balance entry will show it automatically."
+      submitLabel={account ? "Save Changes" : "Add Account"}
+      canSubmit={name.trim().length > 0}
+      onSubmit={() => onSave({
+        name: name.trim(),
+        assetType: kind === "asset" ? type : null,
+        liabilityType: kind === "liability" ? type : null,
+        personId: personId === "combined" ? null : personId,
+      })}
+    >
+      <div className="space-y-2">
+        <Label htmlFor="net-worth-account-name">Account name</Label>
+        <Input id="net-worth-account-name" value={name} onChange={(event) => setName(event.target.value)} autoFocus placeholder="Vanguard Brokerage" />
+      </div>
+      <div className="space-y-2">
+        <Label>Account kind</Label>
+        <Select value={kind} onValueChange={(value) => {
+          const nextKind = value as "asset" | "liability";
+          setKind(nextKind);
+          setType(nextKind === "asset" ? NET_WORTH_ASSETS[0] : NET_WORTH_LIABILITIES[0]);
+        }}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="asset">Asset</SelectItem>
+            <SelectItem value="liability">Liability</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label>Category</Label>
+        <Select value={type} onValueChange={setType}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {(kind === "asset" ? NET_WORTH_ASSETS : NET_WORTH_LIABILITIES).map((item) => (
+              <SelectItem key={item} value={item}>
+                {(kind === "asset" ? ASSET_LABELS : LIABILITY_LABELS)[item]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label>Owner</Label>
+        <Select value={personId} onValueChange={setPersonId}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="combined">Combined</SelectItem>
+            {people.map((person) => <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
       </div>
     </FormDialog>
   );

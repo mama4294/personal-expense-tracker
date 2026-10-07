@@ -24,12 +24,9 @@ import {
 } from "@/components/charts/dashboard-charts";
 import {
   balanceKey,
-  COMBINED,
-  DEFAULT_ACCOUNTS,
-  defaultRows,
-  newRow,
   NetWorthDialog,
-  rowsFromSnapshot,
+  rowsForAccounts,
+  type ConfiguredNetWorthAccount,
   type BalanceRow,
 } from "@/components/net-worth/net-worth-dialog";
 import { personColor } from "@/lib/colors";
@@ -49,6 +46,7 @@ type Balance = {
   liabilityType: string | null;
   amount: string;
   accountName: string;
+  accountId: string | null;
   personId: string | null;
   person: { id: string; name: string } | null;
 };
@@ -84,6 +82,7 @@ export default function NetWorthPage() {
   const [data, setData] = useState<NetWorthData | null>(null);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
+  const [netWorthAccounts, setNetWorthAccounts] = useState<ConfiguredNetWorthAccount[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [person, setPerson] = useState("COMBINED");
 
@@ -107,13 +106,14 @@ export default function NetWorthPage() {
   );
 
   const load = useCallback(async () => {
-    const [dashboardResponse, snapshotResponse, peopleResponse] = await Promise.all([
+    const [dashboardResponse, snapshotResponse, peopleResponse, accountsResponse] = await Promise.all([
       fetch(`/api/dashboard/net-worth?person=${person}`),
       fetch("/api/net-worth"),
       fetch("/api/people"),
+      fetch("/api/net-worth/accounts"),
     ]);
 
-    if (!dashboardResponse.ok || !snapshotResponse.ok || !peopleResponse.ok) {
+    if (!dashboardResponse.ok || !snapshotResponse.ok || !peopleResponse.ok || !accountsResponse.ok) {
       setMessage({ tone: "error", text: "Could not load net worth data." });
       return;
     }
@@ -121,6 +121,7 @@ export default function NetWorthPage() {
     setData(await dashboardResponse.json());
     setSnapshots(await snapshotResponse.json());
     setPeople(await peopleResponse.json());
+    setNetWorthAccounts(await accountsResponse.json());
   }, [person]);
 
   useEffect(() => {
@@ -134,21 +135,6 @@ export default function NetWorthPage() {
     (snapshot) => snapshot.month.slice(0, 7) === month,
   );
 
-  /** Guarantees the everyday accounts are present, without duplicating them. */
-  function withDefaultAccounts(existingRows: BalanceRow[]): BalanceRow[] {
-    const present = new Set(
-      existingRows
-        .filter((row) => row.kind === "asset")
-        .map((row) => row.type),
-    );
-
-    const missing = DEFAULT_ACCOUNTS.filter((type) => !present.has(type)).map(
-      (type) => newRow("asset", type),
-    );
-
-    return [...existingRows, ...missing];
-  }
-
   function openFor(targetMonth: string) {
     const existing = snapshots.find(
       (snapshot) => snapshot.month.slice(0, 7) === targetMonth,
@@ -161,36 +147,17 @@ export default function NetWorthPage() {
       .sort((a, b) => b.month.localeCompare(a.month))[0];
 
     setPreviousMonth(previous ? previous.month.slice(0, 7) : null);
-    setPreviousBalances(
-      previous
-        ? Object.fromEntries(
-            previous.balances.map((balance) => [
-              balanceKey(
-                balance.accountName || ASSET_LABELS[balance.assetType ?? ""] || LIABILITY_LABELS[balance.liabilityType ?? ""],
-                balance.personId ?? COMBINED,
-              ),
-              Number(balance.amount),
-            ]),
-          )
-        : {},
-    );
+    setPreviousBalances(previous
+      ? Object.fromEntries(previous.balances.filter((balance) => balance.accountId).map((balance) => [balanceKey(balance.accountId!), Number(balance.amount)]))
+      : {});
 
     setMonth(targetMonth);
 
     if (existing) {
-      setRows(withDefaultAccounts(rowsFromSnapshot(existing.balances)));
+      setRows(rowsForAccounts(netWorthAccounts, existing.balances));
       setNotes(existing.notes ?? "");
-    } else if (previous) {
-      // Carry last month's accounts forward with blank amounts — the same
-      // accounts, held by the same people, get re-entered every month.
-      setRows(
-        withDefaultAccounts(
-          rowsFromSnapshot(previous.balances).map((row) => ({ ...row, amount: "" })),
-        ),
-      );
-      setNotes("");
     } else {
-      setRows(defaultRows());
+      setRows(rowsForAccounts(netWorthAccounts));
       setNotes("");
     }
 
@@ -484,7 +451,6 @@ export default function NetWorthPage() {
         onRowsChange={setRows}
         notes={notes}
         onNotesChange={setNotes}
-        people={activePeople}
         isExisting={isExisting}
         previousBalances={previousBalances}
         previousMonth={previousMonth}

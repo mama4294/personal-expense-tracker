@@ -42,7 +42,7 @@ export async function POST(request: Request) {
 
     await db.$transaction(async (tx) => {
       for (const [month, monthRows] of byMonth) {
-        const data = monthRows.map((row) => {
+        const data = await Promise.all(monthRows.map(async (row) => {
           const joint = JOINT_WORDS.includes(row.person.toLowerCase());
           const person = joint
             ? null
@@ -52,16 +52,30 @@ export async function POST(request: Request) {
             throw new Error(`Row ${row.line}: no person named "${row.person}"`);
           }
 
+          let accountName = row.accountName;
+          const assetType = row.kind === "asset" ? (row.type as AssetType) : null;
+          const liabilityType = row.kind === "liability" ? (row.type as LiabilityType) : null;
+          let existing = await tx.netWorthAccount.findUnique({ where: { name: accountName } });
+          if (!existing && person) {
+            accountName = `${row.accountName} (${person.name})`;
+            existing = await tx.netWorthAccount.findUnique({ where: { name: accountName } });
+          }
+          if (existing && (existing.assetType !== assetType || existing.liabilityType !== liabilityType || existing.personId !== (person?.id ?? null))) {
+            throw new Error(`Row ${row.line}: account "${accountName}" is configured with a different category or owner in Settings.`);
+          }
+          const configured = existing ?? await tx.netWorthAccount.create({
+            data: { name: accountName, assetType, liabilityType, personId: person?.id ?? null },
+          });
+
           return {
-            accountName: row.accountName,
-            assetType:
-              row.kind === "asset" ? (row.type as AssetType) : null,
-            liabilityType:
-              row.kind === "liability" ? (row.type as LiabilityType) : null,
+            accountId: configured.id,
+            accountName: configured.name,
+            assetType,
+            liabilityType,
             amount: row.amount,
             personId: person?.id ?? null,
           };
-        });
+        }));
 
         const date = parseMonth(month).date;
         const snapshot = await tx.netWorthSnapshot.upsert({

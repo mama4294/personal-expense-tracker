@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -12,130 +11,52 @@ import {
 } from "@/components/ui/dialog";
 import { Input, Textarea } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  ASSET_LABELS,
-  cn,
-  formatCurrency,
-  LIABILITY_LABELS,
-} from "@/lib/utils";
+import { ASSET_LABELS, formatCurrency, LIABILITY_LABELS } from "@/lib/utils";
 
-export const ASSET_TYPES = [
-  "CHECKING",
-  "SAVINGS",
-  "BROKERAGE",
-  "RSU",
-  "FOUR_O_ONE_K",
-  "ROTH_IRA",
-  "HSA",
-  "CRYPTO",
-  "HOME_VALUE",
-] as const;
-
-export const LIABILITY_TYPES = ["MORTGAGE", "CAR_LOAN", "CREDIT_CARD"] as const;
-
-/** Accounts nearly every household re-enters each month. */
-export const DEFAULT_ACCOUNTS = [
-  "CHECKING",
-  "SAVINGS",
-  "BROKERAGE",
-  "FOUR_O_ONE_K",
-  "ROTH_IRA",
-  "HSA",
-] as const;
-
-/** "" means the account is held jointly. */
 export const COMBINED = "";
 
 export type BalanceRow = {
   key: string;
-  kind: "asset" | "liability";
-  type: string;
-  accountName: string;
-  personId: string;
+  accountId: string;
+  name: string;
+  category: string;
+  personName: string;
   amount: string;
 };
 
-let rowCounter = 0;
-export function newRow(
-  kind: "asset" | "liability" = "asset",
-  type?: string,
-  accountName?: string,
-): BalanceRow {
-  rowCounter += 1;
-  return {
-    key: `row-${rowCounter}`,
-    kind,
-    type: type ?? (kind === "asset" ? ASSET_TYPES[0] : LIABILITY_TYPES[0]),
-    accountName: accountName ?? "",
-    personId: COMBINED,
-    amount: "",
-  };
-}
+export type ConfiguredNetWorthAccount = {
+  id: string;
+  name: string;
+  assetType: string | null;
+  liabilityType: string | null;
+  personId: string | null;
+  person?: { id: string; name: string } | null;
+};
 
-/** The starting set for a month with no history to copy from. */
-export function defaultRows(): BalanceRow[] {
-  return DEFAULT_ACCOUNTS.map((type) => newRow("asset", type));
-}
-
-export function rowsFromSnapshot(
-  balances: {
-    assetType: string | null;
-    liabilityType: string | null;
-    accountName?: string;
-    amount: string | number;
-    personId: string | null;
-  }[],
+export function rowsForAccounts(
+  accounts: ConfiguredNetWorthAccount[],
+  balances: { accountId: string | null; amount: string | number }[] = [],
 ): BalanceRow[] {
-  return balances.map((balance) => {
-    rowCounter += 1;
-    const kind: "asset" | "liability" = balance.assetType
-      ? "asset"
-      : "liability";
-    return {
-      key: `row-${rowCounter}`,
-      kind,
-      type: (balance.assetType ?? balance.liabilityType) as string,
-      accountName:
-        balance.accountName ||
-        ASSET_LABELS[balance.assetType ?? ""] ||
-        LIABILITY_LABELS[balance.liabilityType ?? ""] ||
-        "",
-      personId: balance.personId ?? COMBINED,
-      amount: String(Number(balance.amount)),
-    };
-  });
+  const amounts = new Map(
+    balances
+      .filter((balance) => balance.accountId)
+      .map((balance) => [balance.accountId!, String(Number(balance.amount))]),
+  );
+  return accounts.map((account) => ({
+    key: account.id,
+    accountId: account.id,
+    name: account.name,
+    category: account.assetType
+      ? ASSET_LABELS[account.assetType]
+      : LIABILITY_LABELS[account.liabilityType ?? ""],
+    personName: account.person?.name ?? "Combined",
+    amount: amounts.get(account.id) ?? "",
+  }));
 }
 
-/**
- * Asset and liability accounts share one dropdown, so the option value has to
- * carry both halves of the answer. The two type lists don't overlap today, but
- * encoding the kind keeps that from becoming a correctness requirement.
- */
-function accountValue(kind: BalanceRow["kind"], type: string) {
-  return `${kind}:${type}`;
-}
-
-function parseAccountValue(value: string): {
-  kind: BalanceRow["kind"];
-  type: string;
-} {
-  const [kind, type] = value.split(":");
-  return { kind: kind as BalanceRow["kind"], type };
-}
-
-/** Keys the previous-month lookup by the account *and* who holds it. */
-export function balanceKey(accountName: string, personId: string | null) {
-  return `${accountName.trim().toLowerCase()}|${personId ?? COMBINED}`;
+/** Keys prior monthly values by the stable configured account id. */
+export function balanceKey(accountId: string) {
+  return accountId;
 }
 
 export function NetWorthDialog({
@@ -147,7 +68,6 @@ export function NetWorthDialog({
   onRowsChange,
   notes,
   onNotesChange,
-  people,
   isExisting,
   previousBalances,
   previousMonth,
@@ -161,9 +81,7 @@ export function NetWorthDialog({
   onRowsChange: (rows: BalanceRow[]) => void;
   notes: string;
   onNotesChange: (notes: string) => void;
-  people: { id: string; name: string }[];
   isExisting: boolean;
-  /** Amounts from the most recent earlier snapshot, keyed by balanceKey(). */
   previousBalances: Record<string, number>;
   previousMonth: string | null;
   onSaved: () => void | Promise<void>;
@@ -171,48 +89,8 @@ export function NetWorthDialog({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // A month carried forward can run to a dozen rows, so an appended row lands
-  // well below the scroll box and the click reads as a no-op. Scroll to it and
-  // put the cursor on the field the user is going to change first.
-  const scrollerRef = useRef<HTMLDivElement>(null);
-  // A ref, not state: this is a one-shot side effect on the row that was just
-  // appended, and it must not trigger another render of its own.
-  const pendingFocus = useRef<string | null>(null);
-
-  useEffect(() => {
-    const key = pendingFocus.current;
-    if (!key) return;
-    pendingFocus.current = null;
-    const row = scrollerRef.current?.querySelector(`[data-row-key="${key}"]`);
-    row?.scrollIntoView({ block: "nearest" });
-    row?.querySelector<HTMLElement>('[aria-label="Account name"]')?.focus();
-  }, [rows]);
-
-  function addRow() {
-    const row = newRow();
-    pendingFocus.current = row.key;
-    onRowsChange([...rows, row]);
-  }
-
-  function updateRow(key: string, changes: Partial<BalanceRow>) {
-    onRowsChange(
-      rows.map((row) => {
-        if (row.key !== key) return row;
-        const next = { ...row, ...changes };
-        // Switching between asset and liability needs a valid type for the new
-        // kind, since the two lists don't overlap. The account dropdown always
-        // sends both together, so only fall back when the type was left out.
-        if (
-          changes.kind &&
-          changes.kind !== row.kind &&
-          changes.type === undefined
-        ) {
-          next.type =
-            changes.kind === "asset" ? ASSET_TYPES[0] : LIABILITY_TYPES[0];
-        }
-        return next;
-      }),
-    );
+  function updateRow(key: string, amount: string) {
+    onRowsChange(rows.map((row) => row.key === key ? { ...row, amount } : row));
   }
 
   async function save() {
@@ -224,21 +102,13 @@ export function NetWorthDialog({
 
     setSaving(true);
     setError(null);
-
     const response = await fetch("/api/net-worth", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         month,
         notes: notes || undefined,
-        balances: filled.map((row) => ({
-          ...(row.kind === "asset"
-            ? { assetType: row.type }
-            : { liabilityType: row.type }),
-          accountName: row.accountName.trim(),
-          amount: Number(row.amount),
-          personId: row.personId === COMBINED ? null : row.personId,
-        })),
+        balances: filled.map((row) => ({ accountId: row.accountId, amount: Number(row.amount) })),
       }),
     });
 
@@ -262,206 +132,68 @@ export function NetWorthDialog({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>
-            {isExisting ? "Edit Balances" : "Add Balances"}
-          </DialogTitle>
+          <DialogTitle>{isExisting ? "Edit Balances" : "Add Balances"}</DialogTitle>
           <p className="text-sm text-muted-foreground">
-            Enter one row per account, such as Vanguard Brokerage or Chase Savings.
+            Accounts come from Settings. Enter each account&apos;s current value; category totals are calculated automatically.
           </p>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="snapshot-month">Month</Label>
-            <Input
-              id="snapshot-month"
-              type="month"
-              className="w-[190px]"
-              value={month}
-              onChange={(event) => onMonthChange(event.target.value)}
-            />
+            <Input id="snapshot-month" type="month" className="w-[190px]" value={month} onChange={(event) => onMonthChange(event.target.value)} />
           </div>
 
-          <div className="space-y-2">
-            <div className="hidden gap-3 px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground sm:grid sm:grid-cols-[1.1fr_1.1fr_1fr_140px_40px]">
-              <span>Account type</span>
-              <span>Account name</span>
-              <span>Person</span>
-              <span>Amount</span>
-              <span className="sr-only">Remove</span>
-            </div>
-
-            <div
-              ref={scrollerRef}
-              className="max-h-[420px] space-y-2 overflow-y-auto pr-1"
-            >
-              {rows.map((row) => {
-                const previous =
-                  previousBalances[balanceKey(row.type, row.personId)];
-                const current = row.amount === "" ? null : Number(row.amount);
-                const change =
-                  previous != null && previous !== 0 && current != null
+          {rows.length > 0 ? (
+            <div className="space-y-2">
+              <div className="grid grid-cols-[1fr_150px] gap-3 px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                <span>Account</span><span className="text-right">Current value</span>
+              </div>
+              <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
+                {rows.map((row) => {
+                  const previous = previousBalances[balanceKey(row.accountId)];
+                  const current = row.amount === "" ? null : Number(row.amount);
+                  const change = previous != null && previous !== 0 && current != null
                     ? (current - previous) / Math.abs(previous)
                     : null;
-                // A big jump usually means a typo or the wrong person.
-                const unusual = change != null && Math.abs(change) > 0.25;
-
-                return (
-                  <div
-                    key={row.key}
-                    data-row-key={row.key}
-                    className="grid gap-3 rounded-lg border border-border p-3 sm:grid-cols-[1.1fr_1.1fr_1fr_140px_40px] sm:items-start sm:border-0 sm:p-1"
-                  >
-                    <Select
-                      value={accountValue(row.kind, row.type)}
-                      onValueChange={(value) =>
-                        updateRow(row.key, parseAccountValue(value))
-                      }
-                    >
-                      <SelectTrigger aria-label="Account type">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectLabel>Assets</SelectLabel>
-                          {ASSET_TYPES.map((type) => (
-                            <SelectItem
-                              key={type}
-                              value={accountValue("asset", type)}
-                            >
-                              {ASSET_LABELS[type]}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                        <SelectSeparator />
-                        <SelectGroup>
-                          <SelectLabel>Liabilities</SelectLabel>
-                          {LIABILITY_TYPES.map((type) => (
-                            <SelectItem
-                              key={type}
-                              value={accountValue("liability", type)}
-                            >
-                              {LIABILITY_LABELS[type]}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-
-                    <Input
-                      placeholder={ASSET_LABELS[row.type] ?? LIABILITY_LABELS[row.type]}
-                      aria-label="Account name"
-                      value={row.accountName}
-                      onChange={(event) =>
-                        updateRow(row.key, { accountName: event.target.value })
-                      }
-                      required
-                    />
-
-                    <Select
-                      value={row.personId || "combined"}
-                      onValueChange={(value) =>
-                        updateRow(row.key, {
-                          personId: value === "combined" ? COMBINED : value,
-                        })
-                      }
-                    >
-                      <SelectTrigger aria-label="Person">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="combined">Combined</SelectItem>
-                        {people.map((person) => (
-                          <SelectItem key={person.id} value={person.id}>
-                            {person.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-
-                    <div className="space-y-1">
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        aria-label="Amount"
-                        value={row.amount}
-                        onChange={(event) =>
-                          updateRow(row.key, { amount: event.target.value })
-                        }
-                      />
-                      {previousMonth ? (
-                        <p
-                          className={cn(
-                            "text-xs tabular-nums",
-                            unusual
-                              ? "text-amber-600"
-                              : "text-muted-foreground",
-                          )}
-                        >
-                          {previous == null ? (
-                            "No prior value"
-                          ) : (
-                            <>
-                              {"Previous"}: {formatCurrency(previous)}
-                              {change != null
-                                ? ` · ${change > 0 ? "+" : ""}${(change * 100).toFixed(1)}%`
-                                : null}
-                            </>
-                          )}
-                        </p>
-                      ) : null}
+                  const unusual = change != null && Math.abs(change) > 0.25;
+                  return (
+                    <div key={row.key} className="grid grid-cols-[1fr_150px] items-center gap-3 rounded-lg border border-border p-3 sm:border-0 sm:p-1">
+                      <div>
+                        <p className="font-medium">{row.name}</p>
+                        <p className="text-xs text-muted-foreground">{row.category} · {row.personName}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <Input type="number" step="0.01" placeholder="0.00" aria-label={`${row.name} current value`} value={row.amount} onChange={(event) => updateRow(row.key, event.target.value)} />
+                        {previousMonth ? (
+                          <p className={`text-right text-xs tabular-nums ${unusual ? "text-amber-600" : "text-muted-foreground"}`}>
+                            {previous == null ? "No prior value" : <>Previous: {formatCurrency(previous)}{change != null ? ` · ${change > 0 ? "+" : ""}${(change * 100).toFixed(1)}%` : null}</>}
+                          </p>
+                        ) : null}
+                      </div>
                     </div>
-
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Remove account"
-                      onClick={() =>
-                        onRowsChange(
-                          rows.filter((item) => item.key !== row.key),
-                        )
-                      }
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={addRow}
-            >
-              <Plus className="h-4 w-4" />
-              Add row
-            </Button>
-          </div>
+          ) : (
+            <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+              Add accounts in Settings → Net Worth Accounts first.
+            </p>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="snapshot-notes">Notes</Label>
-            <Textarea
-              id="snapshot-notes"
-              rows={2}
-              value={notes}
-              onChange={(event) => onNotesChange(event.target.value)}
-            />
+            <Textarea id="snapshot-notes" rows={2} value={notes} onChange={(event) => onNotesChange(event.target.value)} />
           </div>
-
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={save} disabled={saving}>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={save} disabled={saving || rows.length === 0}>
             {isExisting ? "Update Balances" : "Save Balances"}
           </Button>
         </DialogFooter>

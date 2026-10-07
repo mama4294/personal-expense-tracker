@@ -28,6 +28,7 @@ import {
   CompanyDialog,
   LoginDialog,
   MergeCategoryDialog,
+  NetWorthAccountDialog,
   PasswordDialog,
   PersonDialog,
   SplitCategoryDialog,
@@ -38,13 +39,21 @@ import {
   type SplitRow,
 } from "@/components/people/split-editor";
 import { colorLabel, personColor } from "@/lib/colors";
-import { accountLabel } from "@/lib/utils";
+import { accountLabel, ASSET_LABELS, LIABILITY_LABELS } from "@/lib/utils";
 
 type Account = {
   id: string;
   name: string;
   nickname: string | null;
   splits: SplitRow[];
+};
+type NetWorthAccount = {
+  id: string;
+  name: string;
+  assetType: string | null;
+  liabilityType: string | null;
+  personId: string | null;
+  person: { id: string; name: string } | null;
 };
 type Category = { id: string; name: string; excludedFromFi: boolean };
 type Login = { id: string; username: string; name: string; createdAt: string };
@@ -64,6 +73,7 @@ type DialogState =
   | { kind: "person"; person: Person | null }
   | { kind: "company"; company: Company | null; defaultPersonId?: string }
   | { kind: "account"; account: Account | null }
+  | { kind: "netWorthAccount"; account: NetWorthAccount | null }
   | { kind: "category"; category: Category | null }
   | { kind: "merge"; category: Category }
   | { kind: "split"; category: Category }
@@ -72,6 +82,7 @@ type DialogState =
 
 export default function SettingsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [netWorthAccounts, setNetWorthAccounts] = useState<NetWorthAccount[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -92,12 +103,14 @@ export default function SettingsPage() {
       peopleResponse,
       loginResponse,
       companyResponse,
+      netWorthAccountResponse,
     ] = await Promise.all([
       fetch("/api/accounts"),
       fetch("/api/settings"),
       fetch("/api/people"),
       fetch("/api/users"),
       fetch("/api/companies"),
+      fetch("/api/net-worth/accounts"),
     ]);
 
     if (
@@ -106,6 +119,7 @@ export default function SettingsPage() {
       !peopleResponse.ok ||
       !loginResponse.ok ||
       !companyResponse.ok
+      || !netWorthAccountResponse.ok
     ) {
       setMessage({ tone: "error", text: "Could not load settings." });
       return;
@@ -120,6 +134,7 @@ export default function SettingsPage() {
     setPeople(await peopleResponse.json());
     setLogins(await loginResponse.json());
     setCompanies(await companyResponse.json());
+    setNetWorthAccounts(await netWorthAccountResponse.json());
   }, []);
 
   useEffect(() => {
@@ -191,6 +206,7 @@ export default function SettingsPage() {
           <TabsTrigger value="people">People</TabsTrigger>
           <TabsTrigger value="companies">Companies</TabsTrigger>
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
+          <TabsTrigger value="netWorthAccounts">Net Worth Accounts</TabsTrigger>
           <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="fi">FI Settings</TabsTrigger>
           <TabsTrigger value="logins">Logins</TabsTrigger>
@@ -513,6 +529,50 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
+        {/* --- Net worth accounts --- */}
+        <TabsContent value="netWorthAccounts">
+          <Card>
+            <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+              <div>
+                <CardTitle>Net Worth Accounts</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Configure account names and categories once. They will appear in every monthly balance form.
+                </p>
+              </div>
+              <Button onClick={() => setDialog({ kind: "netWorthAccount", account: null })}>
+                <Plus className="h-4 w-4" /> Add Account
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader><TableRow>
+                  <TableHead>Account</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Owner</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow></TableHeader>
+                <TableBody>
+                  {netWorthAccounts.map((account) => (
+                    <TableRow key={account.id}>
+                      <TableCell className="font-medium">{account.name}</TableCell>
+                      <TableCell>{account.assetType ? ASSET_LABELS[account.assetType] : LIABILITY_LABELS[account.liabilityType ?? ""]}</TableCell>
+                      <TableCell>{account.person?.name ?? "Combined"}</TableCell>
+                      <TableCell className="text-right">
+                        <RowActions label={`Actions for ${account.name}`} disabled={saving}>
+                          <DropdownMenuItem onSelect={() => setDialog({ kind: "netWorthAccount", account })}>Edit</DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem destructive onSelect={() => confirmThen(`Delete ${account.name}?`, () => mutate(`/api/net-worth/accounts/${account.id}`, { method: "DELETE" }, "Net worth account deleted."))}>Delete</DropdownMenuItem>
+                        </RowActions>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {netWorthAccounts.length === 0 ? <TableRow><TableCell colSpan={4} className="text-muted-foreground">No net worth accounts configured yet.</TableCell></TableRow> : null}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* --- Categories --- */}
         <TabsContent value="categories">
           <Card>
@@ -822,6 +882,26 @@ export default function SettingsPage() {
                 "/api/accounts",
                 { method: "POST", body: JSON.stringify(values) },
                 "Account added.",
+              )
+        }
+      />
+
+      <NetWorthAccountDialog
+        open={dialog.kind === "netWorthAccount"}
+        onOpenChange={(open) => (open ? null : close())}
+        account={dialog.kind === "netWorthAccount" ? dialog.account : null}
+        people={activePeople}
+        onSave={(values) =>
+          dialog.kind === "netWorthAccount" && dialog.account
+            ? mutate(
+                `/api/net-worth/accounts/${dialog.account.id}`,
+                { method: "PATCH", body: JSON.stringify(values) },
+                "Net worth account updated.",
+              )
+            : mutate(
+                "/api/net-worth/accounts",
+                { method: "POST", body: JSON.stringify(values) },
+                "Net worth account added.",
               )
         }
       />
