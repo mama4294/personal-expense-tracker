@@ -35,6 +35,7 @@ import {
   ASSET_LABELS,
   formatCurrency,
   formatMonthLabel,
+  INVESTMENT_ASSETS,
   LIABILITY_LABELS,
 } from "@/lib/utils";
 
@@ -75,6 +76,16 @@ function currentMonth() {
 function sumBalances(balances: Balance[], kind: "asset" | "liability") {
   return balances
     .filter((balance) => (kind === "asset" ? balance.assetType : balance.liabilityType))
+    .reduce((sum, balance) => sum + Number(balance.amount), 0);
+}
+
+function sumInvestedAssets(balances: Balance[], person: string) {
+  return balances
+    .filter((balance) =>
+      (person === "COMBINED" || balance.personId === person) &&
+      balance.assetType &&
+      INVESTMENT_ASSETS.includes(balance.assetType as (typeof INVESTMENT_ASSETS)[number]),
+    )
     .reduce((sum, balance) => sum + Number(balance.amount), 0);
 }
 
@@ -235,16 +246,19 @@ export default function NetWorthPage() {
 
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard
-          label="Latest Net Worth"
-          value={formatCurrency(data?.latestNetWorth ?? 0)}
+          label="Invested Assets"
+          value={formatCurrency(sumInvestedAssets(snapshots[0]?.balances ?? [], person))}
+          hint="Brokerage, RSUs, 401k, Roth IRA, and HSA balances."
         />
         <StatCard
-          label="Months Recorded"
-          value={String(data?.timeline.length ?? 0)}
-        />
-        <StatCard
-          label="Latest Assets"
+          label="Total Assets"
           value={formatCurrency(data?.timeline.at(-1)?.assets ?? 0)}
+          hint="All asset balances, including cash, investments, property, and crypto."
+        />
+        <StatCard
+          label="Total Net Worth"
+          value={formatCurrency(data?.latestNetWorth ?? 0)}
+          hint="Total assets minus mortgage, car loan, and credit card balances."
         />
       </div>
 
