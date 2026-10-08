@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Pencil, Plus, Trash2, Upload } from "lucide-react";
+import { Copy, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -90,6 +90,7 @@ export default function IncomePage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [draft, setDraft] = useState<IncomeDraft>(blankIncome);
   const [paycheckOpen, setPaycheckOpen] = useState(false);
+  const [paycheckMode, setPaycheckMode] = useState<"add" | "edit" | "duplicate">("add");
   const [importOpen, setImportOpen] = useState(false);
   const [paycheckDraft, setPaycheckDraft] = useState<PaycheckDraft>(() =>
     blankPaycheck(new Date().toISOString().slice(0, 10)),
@@ -149,6 +150,7 @@ export default function IncomePage() {
   }
 
   function openAddPaycheck() {
+    setPaycheckMode("add");
     setPaycheckDraft(
       blankPaycheck(
         new Date().toISOString().slice(0, 10),
@@ -159,9 +161,27 @@ export default function IncomePage() {
   }
 
   function openEditPaycheck(paycheck: Paycheck) {
+    setPaycheckMode("edit");
     setPaycheckDraft({
       id: paycheck.id,
       date: paycheck.date.slice(0, 10),
+      personId: paycheck.personId,
+      companyId: paycheck.companyId ?? "",
+      annualSalary: String(Number(paycheck.annualSalary)),
+      grossIncome: String(Number(paycheck.grossIncome)),
+      medical: String(Number(paycheck.medical)),
+      dentalVision: String(Number(paycheck.dentalVision)),
+      retirement401k: String(Number(paycheck.retirement401k)),
+      hsa: String(Number(paycheck.hsa)),
+      taxes: String(Number(paycheck.taxes)),
+    });
+    setPaycheckOpen(true);
+  }
+
+  function duplicatePaycheck(paycheck: Paycheck) {
+    setPaycheckMode("duplicate");
+    setPaycheckDraft({
+      date: "",
       personId: paycheck.personId,
       companyId: paycheck.companyId ?? "",
       annualSalary: String(Number(paycheck.annualSalary)),
@@ -453,6 +473,14 @@ export default function IncomePage() {
                         <Button
                           variant="ghost"
                           size="icon"
+                          aria-label={`Duplicate ${entry.date.slice(0, 10)} paycheck`}
+                          onClick={() => duplicatePaycheck(entry)}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           aria-label={`Delete ${entry.date.slice(0, 10)} paycheck`}
                           onClick={() => deletePaycheck(entry)}
                         >
@@ -549,6 +577,7 @@ export default function IncomePage() {
       <PaycheckDialog
         open={paycheckOpen}
         onOpenChange={setPaycheckOpen}
+        mode={paycheckMode}
         draft={paycheckDraft}
         onDraftChange={setPaycheckDraft}
         people={activePeople}

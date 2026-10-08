@@ -58,6 +58,7 @@ function toNumber(value: string) {
 export function PaycheckDialog({
   open,
   onOpenChange,
+  mode,
   draft,
   onDraftChange,
   people,
@@ -66,6 +67,7 @@ export function PaycheckDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  mode: "add" | "edit" | "duplicate";
   draft: PaycheckDraft;
   onDraftChange: (draft: PaycheckDraft) => void;
   people: { id: string; name: string }[];
@@ -153,9 +155,17 @@ export function PaycheckDialog({
     >
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{draft.id ? "Edit Paycheck" : "Add Paycheck"}</DialogTitle>
+          <DialogTitle>
+            {mode === "edit"
+              ? "Edit Paycheck"
+              : mode === "duplicate"
+                ? "Duplicate Paycheck"
+                : "Add Paycheck"}
+          </DialogTitle>
           <DialogDescription>
-            One pay date per record. Cash flow and charts sum paychecks by month.
+            {mode === "duplicate"
+              ? "Paycheck details are copied. Choose a new pay date before saving."
+              : "One pay date per record. Cash flow and charts sum paychecks by month."}
           </DialogDescription>
         </DialogHeader>
 
