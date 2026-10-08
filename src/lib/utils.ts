@@ -140,6 +140,19 @@ export function formatShortDate(value: string | Date): string {
   return `${month}/${day}/${year}`;
 }
 
+/** DD MMM YY from a date value, kept in UTC to avoid day shifts. */
+export function formatDayMonthYear(value: string | Date): string {
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "2-digit",
+    timeZone: "UTC",
+  }).format(date);
+}
+
 /**
  * What to call an account on screen. `name` has to match the CSV export exactly
  * for import to work, which makes it a poor label; the nickname is what the

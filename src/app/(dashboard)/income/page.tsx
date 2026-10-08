@@ -33,6 +33,7 @@ import { personColor } from "@/lib/colors";
 import { PaycheckImportDialog } from "@/components/import/financial-import-dialogs";
 import {
   formatCurrency,
+  formatDayMonthYear,
   formatMonthLabel,
 } from "@/lib/utils";
 
@@ -408,7 +409,7 @@ export default function IncomePage() {
                 return (
                   <TableRow key={entry.id}>
                     <TableCell className="whitespace-nowrap">
-                      {entry.date.slice(0, 10)}
+                      {formatDayMonthYear(entry.date)}
                     </TableCell>
                     <TableCell>{entry.person.name}</TableCell>
                     <TableCell>{entry.company?.name ?? "—"}</TableCell>
