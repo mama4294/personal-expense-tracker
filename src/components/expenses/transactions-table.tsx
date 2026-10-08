@@ -308,7 +308,14 @@ export function TransactionsTable({
                   <p className="text-xs text-muted-foreground">{transaction.notes}</p>
                 ) : null}
               </TableCell>
-              <TableCell>{transaction.category?.name ?? "—"}</TableCell>
+              <TableCell>
+                <div className="flex flex-col items-start gap-1">
+                  <span>{transaction.category?.name ?? "—"}</span>
+                  {transaction.category?.excludedFromSpending ? (
+                    <Badge variant="warning">Excluded from spending</Badge>
+                  ) : null}
+                </div>
+              </TableCell>
               <TableCell>{accountLabel(transaction.account)}</TableCell>
               <TableCell className="whitespace-nowrap">
                 {describeSplitRows(transaction.splits, people)}
