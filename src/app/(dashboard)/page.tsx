@@ -145,14 +145,31 @@ export default function SpendingPage() {
   );
 
   const loadReference = useCallback(async () => {
-    const [categoryData, accountData, peopleData] = await Promise.all([
-      fetch("/api/categories").then((response) => response.json()),
-      fetch("/api/accounts").then((response) => response.json()),
-      fetch("/api/people").then((response) => response.json()),
-    ]);
-    setCategories(categoryData);
-    setAccounts(accountData);
-    setPeople(peopleData);
+    try {
+      const responses = await Promise.all([
+        fetch("/api/categories"),
+        fetch("/api/accounts"),
+        fetch("/api/people"),
+      ]);
+      const failedResponse = responses.find((response) => !response.ok);
+      if (failedResponse) {
+        const body = await failedResponse.json().catch(() => null);
+        throw new Error(body?.error ?? `Could not load reference data (${failedResponse.status}).`);
+      }
+
+      const [categoryData, accountData, peopleData] = await Promise.all(
+        responses.map((response) => response.json()),
+      );
+      setCategories(categoryData);
+      setAccounts(accountData);
+      setPeople(peopleData);
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Could not load categories, accounts, and people.",
+      );
+    }
   }, []);
 
   const loadDashboard = useCallback(async () => {

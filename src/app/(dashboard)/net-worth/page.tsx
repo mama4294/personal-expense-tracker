@@ -62,8 +62,8 @@ type Snapshot = {
 type NetWorthData = {
   timeline: { month: string; netWorth: number; assets: number; liabilities: number }[];
   allocation: { name: string; total: number }[];
-  /// One row per account, with a numeric column per holder.
-  accountsByPerson: Record<string, string | number>[];
+  /// One row per asset category, with a numeric column per selected holder.
+  categoriesByPerson: Record<string, string | number>[];
   accountHolders: string[];
   latestNetWorth: number;
   jointNetWorth: number;
@@ -180,9 +180,9 @@ export default function NetWorthPage() {
     total: item.total,
   }));
 
-  const accountRows = (data?.accountsByPerson ?? []).map((row) => ({
+  const categoryRows = (data?.categoriesByPerson ?? []).map((row) => ({
     ...row,
-    name: String(row.name),
+    name: ASSET_LABELS[String(row.name)] ?? String(row.name),
   }));
 
   // Jointly held accounts belong to no one, so they get the neutral slot
@@ -292,17 +292,14 @@ export default function NetWorthPage() {
 
         <Card className="xl:col-span-2">
           <CardHeader>
-            <CardTitle>Accounts by Person</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Latest balances. Always shows everyone, whatever the filter above
-              is set to.
-            </p>
+            <CardTitle>Categories by Person</CardTitle>
+            <p className="text-sm text-muted-foreground">Latest balances.</p>
           </CardHeader>
           <CardContent>
-            {accountRows.length > 0 ? (
+            {categoryRows.length > 0 ? (
               <GroupedBarChart
                 fractionDigits={0}
-                data={accountRows}
+                data={categoryRows}
                 xKey="name"
                 series={holderSeries}
               />

@@ -428,9 +428,8 @@ export async function getNetWorthDashboard(person: PersonFilter = "COMBINED") {
 
   const latest = snapshots.at(-1);
   const allocationMap = new Map<string, number>();
-  // Who holds what, per account. Unlike `allocation` this ignores the person
-  // filter: the whole point of the chart is comparing people side by side.
-  const byAccount = new Map<string, Map<string, number>>();
+  // Category totals by holder feed the person-filtered latest-balance chart.
+  const byCategory = new Map<string, Map<string, number>>();
   const holders = new Set<string>();
   let jointNetWorth = 0;
 
@@ -449,10 +448,9 @@ export async function getNetWorthDashboard(person: PersonFilter = "COMBINED") {
           ? (personNames.get(balance.personId) ?? "Unknown")
           : "Combined";
         holders.add(holder);
-        const account =
-          byAccount.get(balance.accountName || balance.assetType) ?? new Map<string, number>();
-        account.set(holder, (account.get(holder) ?? 0) + Number(balance.amount));
-        byAccount.set(balance.accountName || balance.assetType, account);
+        const category = byCategory.get(balance.assetType) ?? new Map<string, number>();
+        category.set(holder, (category.get(holder) ?? 0) + Number(balance.amount));
+        byCategory.set(balance.assetType, category);
       }
 
       if (!mine(balance) || !balance.assetType) continue;
@@ -470,11 +468,15 @@ export async function getNetWorthDashboard(person: PersonFilter = "COMBINED") {
     ...(holders.has("Combined") ? ["Combined"] : []),
   ];
 
-  const accountsByPerson = Array.from(byAccount.entries())
-    .map(([account, amounts]) => ({
-      name: account,
-      total: Array.from(amounts.values()).reduce((sum, value) => sum + value, 0),
-      ...Object.fromEntries(holderOrder.map((who) => [who, amounts.get(who) ?? 0])),
+  const chartHolderOrder = person === "COMBINED"
+    ? holderOrder
+    : holderOrder.filter((holder) => holder === personNames.get(person));
+
+  const categoriesByPerson = Array.from(byCategory.entries())
+    .map(([category, amounts]) => ({
+      name: category,
+      total: chartHolderOrder.reduce((sum, holder) => sum + (amounts.get(holder) ?? 0), 0),
+      ...Object.fromEntries(chartHolderOrder.map((who) => [who, amounts.get(who) ?? 0])),
     }))
     .sort((a, b) => b.total - a.total);
 
@@ -484,8 +486,8 @@ export async function getNetWorthDashboard(person: PersonFilter = "COMBINED") {
       name,
       total,
     })),
-    accountsByPerson,
-    accountHolders: holderOrder,
+    categoriesByPerson,
+    accountHolders: chartHolderOrder,
     latestNetWorth: timeline.at(-1)?.netWorth ?? 0,
     /// Held by the household rather than any one person; excluded from a
     /// person view, so the page can say so instead of quietly losing it.
