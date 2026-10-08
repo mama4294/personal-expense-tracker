@@ -44,6 +44,7 @@ import {
   type Person,
   type SplitRow,
 } from "@/components/people/split-editor";
+import { PersonBadge } from "@/components/people/person-badge";
 import {
   accountLabel,
   cn,
@@ -273,7 +274,7 @@ export function TransactionsTable({
             <TableHead>Split</TableHead>
             {activePeople.map((person) => (
               <TableHead key={person.id} className="text-right">
-                {person.name}
+                <PersonBadge name={person.name} color={person.color} />
               </TableHead>
             ))}
             <SortableHead

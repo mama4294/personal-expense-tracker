@@ -30,6 +30,7 @@ import {
 } from "@/components/income/paycheck-dialog";
 import { netIncome } from "@/lib/income";
 import { personColor } from "@/lib/colors";
+import { PersonBadge } from "@/components/people/person-badge";
 import { PaycheckImportDialog } from "@/components/import/financial-import-dialogs";
 import {
   formatCurrency,
@@ -411,7 +412,12 @@ export default function IncomePage() {
                     <TableCell className="whitespace-nowrap">
                       {formatDayMonthYear(entry.date)}
                     </TableCell>
-                    <TableCell>{entry.person.name}</TableCell>
+                    <TableCell>
+                      <PersonBadge
+                        name={entry.person.name}
+                        color={people.find((person) => person.id === entry.personId)?.color}
+                      />
+                    </TableCell>
                     <TableCell>{entry.company?.name ?? "—"}</TableCell>
                     <TableCell className="text-right tabular-nums">
                       {formatCurrency(Number(entry.annualSalary))}
@@ -497,7 +503,12 @@ export default function IncomePage() {
                   </TableCell>
                   <TableCell>{entry.source}</TableCell>
                   <TableCell>{entry.description ?? "—"}</TableCell>
-                  <TableCell>{entry.person.name}</TableCell>
+                  <TableCell>
+                    <PersonBadge
+                      name={entry.person.name}
+                      color={people.find((person) => person.id === entry.personId)?.color}
+                    />
+                  </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {formatCurrency(Number(entry.amount))}
                   </TableCell>

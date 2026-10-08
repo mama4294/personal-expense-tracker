@@ -30,6 +30,7 @@ import {
   type BalanceRow,
 } from "@/components/net-worth/net-worth-dialog";
 import { personColor } from "@/lib/colors";
+import { PersonBadge } from "@/components/people/person-badge";
 import { NetWorthImportDialog } from "@/components/import/financial-import-dialogs";
 import {
   ASSET_LABELS,
@@ -415,12 +416,15 @@ export default function NetWorthPage() {
                                   {balance.accountName || (balance.assetType
                                     ? ASSET_LABELS[balance.assetType]
                                     : LIABILITY_LABELS[balance.liabilityType ?? ""])}
-                                  <Badge
-                                    variant={balance.person ? "default" : "outline"}
-                                    className="ml-2"
-                                  >
-                                    {balance.person?.name ?? "Combined"}
-                                  </Badge>
+                                  {balance.person ? (
+                                    <PersonBadge
+                                      name={balance.person.name}
+                                      color={people.find((owner) => owner.id === balance.person?.id)?.color}
+                                      className="ml-2"
+                                    />
+                                  ) : (
+                                    <Badge variant="outline" className="ml-2">Combined</Badge>
+                                  )}
                                 </span>
                                 <span
                                   className={

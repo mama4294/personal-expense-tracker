@@ -23,6 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ColorDot } from "@/components/settings/color-picker";
+import { PersonBadge } from "@/components/people/person-badge";
 import {
   AccountDialog,
   CategoryDialog,
@@ -249,10 +250,7 @@ export default function SettingsPage() {
                   {people.map((person) => (
                     <TableRow key={person.id}>
                       <TableCell className="font-medium">
-                        <span className="flex items-center gap-2">
-                          <ColorDot color={personColor(person.color)} />
-                          {person.name}
-                        </span>
+                        <PersonBadge name={person.name} color={person.color} />
                       </TableCell>
                       <TableCell>
                         <span className="flex items-center gap-2">
@@ -369,7 +367,12 @@ export default function SettingsPage() {
                   {companies.map((company) => (
                     <TableRow key={company.id}>
                       <TableCell className="font-medium">{company.name}</TableCell>
-                      <TableCell>{company.person.name}</TableCell>
+                      <TableCell>
+                        <PersonBadge
+                          name={company.person.name}
+                          color={people.find((person) => person.id === company.personId)?.color}
+                        />
+                      </TableCell>
                       <TableCell>
                         <Badge variant={company.isActive ? "success" : "secondary"}>
                           {company.isActive ? "current" : "past"}
@@ -562,7 +565,16 @@ export default function SettingsPage() {
                     <TableRow key={account.id}>
                       <TableCell className="font-medium">{account.name}</TableCell>
                       <TableCell>{account.assetType ? ASSET_LABELS[account.assetType] : LIABILITY_LABELS[account.liabilityType ?? ""]}</TableCell>
-                      <TableCell>{account.person?.name ?? "Combined"}</TableCell>
+                      <TableCell>
+                        {account.person ? (
+                          <PersonBadge
+                            name={account.person.name}
+                            color={people.find((person) => person.id === account.person?.id)?.color}
+                          />
+                        ) : (
+                          <Badge variant="outline">Combined</Badge>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right">
                         <RowActions label={`Actions for ${account.name}`} disabled={saving}>
                           <DropdownMenuItem onSelect={() => setDialog({ kind: "netWorthAccount", account })}>Edit</DropdownMenuItem>
