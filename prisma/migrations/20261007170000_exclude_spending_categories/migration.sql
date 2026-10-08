@@ -1,0 +1,2 @@
+ALTER TABLE "Category"
+ADD COLUMN "excludedFromSpending" BOOLEAN NOT NULL DEFAULT FALSE;

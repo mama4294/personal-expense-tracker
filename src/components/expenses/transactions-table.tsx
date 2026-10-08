@@ -60,7 +60,7 @@ export type Transaction = {
   isManual: boolean;
   hasOverride: boolean;
   account: { id: string; name: string; nickname: string | null } | null;
-  category: { id: string; name: string } | null;
+  category: { id: string; name: string; excludedFromSpending: boolean } | null;
   tags: string[];
   splits: SplitRow[];
   amounts: Record<string, number>;

@@ -5,6 +5,7 @@ import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -55,7 +56,12 @@ type NetWorthAccount = {
   personId: string | null;
   person: { id: string; name: string } | null;
 };
-type Category = { id: string; name: string; excludedFromFi: boolean };
+type Category = {
+  id: string;
+  name: string;
+  excludedFromFi: boolean;
+  excludedFromSpending: boolean;
+};
 type Login = { id: string; username: string; name: string; createdAt: string };
 type Company = {
   id: string;
@@ -580,8 +586,7 @@ export default function SettingsPage() {
               <div>
                 <CardTitle>Categories</CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  Rename, merge one into another, or split off a new one and
-                  reassign transactions from the Spending page.
+                  Exclude categories such as salary from spending totals and charts. You can also rename, merge, or split categories.
                 </p>
               </div>
               <Button onClick={() => setDialog({ kind: "category", category: null })}>
@@ -594,7 +599,8 @@ export default function SettingsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
-                    <TableHead>Excluded from FI</TableHead>
+                    <TableHead>Exclude from spending</TableHead>
+                    <TableHead>Exclude from FI</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -603,11 +609,42 @@ export default function SettingsPage() {
                     <TableRow key={category.id}>
                       <TableCell className="font-medium">{category.name}</TableCell>
                       <TableCell>
-                        {category.excludedFromFi ? (
-                          <Badge variant="warning">excluded</Badge>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
+                        <Switch
+                          aria-label={`Exclude ${category.name} from spending`}
+                          checked={category.excludedFromSpending}
+                          disabled={saving}
+                          onCheckedChange={(checked) =>
+                            void mutate(
+                              `/api/categories/${category.id}`,
+                              {
+                                method: "PATCH",
+                                body: JSON.stringify({ excludedFromSpending: checked }),
+                              },
+                              checked
+                                ? `${category.name} excluded from spending totals.`
+                                : `${category.name} included in spending totals.`,
+                            )
+                          }
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Switch
+                          aria-label={`Exclude ${category.name} from FI calculations`}
+                          checked={category.excludedFromFi}
+                          disabled={saving}
+                          onCheckedChange={(checked) =>
+                            void mutate(
+                              `/api/categories/${category.id}`,
+                              {
+                                method: "PATCH",
+                                body: JSON.stringify({ excludedFromFi: checked }),
+                              },
+                              checked
+                                ? `${category.name} excluded from FI calculations.`
+                                : `${category.name} included in FI calculations.`,
+                            )
+                          }
+                        />
                       </TableCell>
                       <TableCell className="text-right">
                         <RowActions
@@ -677,36 +714,9 @@ export default function SettingsPage() {
                   0.04 is the standard 4% rule. FI number = annual spending ÷ rate.
                 </p>
               </div>
-              <div className="space-y-2">
-                <Label>Excluded Categories</Label>
-                <p className="text-xs text-muted-foreground">
-                  Excluded categories are left out of the trailing 12-month
-                  spending used for the FI number.
-                </p>
-                <div className="grid gap-2 md:grid-cols-2">
-                  {categories.map((category) => (
-                    <label
-                      key={category.id}
-                      className="flex items-center gap-2 text-sm"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={category.excludedFromFi}
-                        onChange={(event) =>
-                          setCategories((current) =>
-                            current.map((item) =>
-                              item.id === category.id
-                                ? { ...item, excludedFromFi: event.target.checked }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                      {category.name}
-                    </label>
-                  ))}
-                </div>
-              </div>
+              <p className="text-xs text-muted-foreground">
+                Choose category exclusions from the Categories tab. FI exclusions affect the trailing 12-month spending used for the FI number.
+              </p>
               <Button
                 disabled={saving}
                 onClick={() =>
@@ -716,10 +726,6 @@ export default function SettingsPage() {
                       method: "PATCH",
                       body: JSON.stringify({
                         withdrawalRate: Number(withdrawalRate),
-                        categoryFiExclusions: categories.map((category) => ({
-                          id: category.id,
-                          excludedFromFi: category.excludedFromFi,
-                        })),
                       }),
                     },
                     "FI settings saved.",

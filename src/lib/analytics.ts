@@ -193,7 +193,11 @@ export async function getTransactionList(filters: DashboardFilters = {}) {
           }
         : null,
       category: transaction.category
-        ? { id: transaction.category.id, name: transaction.category.name }
+        ? {
+            id: transaction.category.id,
+            name: transaction.category.name,
+            excludedFromSpending: transaction.category.excludedFromSpending,
+          }
         : null,
       tags: transaction.tags.map((link) => link.tag.name),
       splits: transaction.splits,
@@ -210,7 +214,8 @@ export async function getSpendingDashboard(filters: DashboardFilters = {}) {
   ]);
 
   const activePersonIds = people.map((entry) => entry.id);
-  const mapped = mapTransactionAmounts(transactions, activePersonIds, person);
+  const mapped = mapTransactionAmounts(transactions, activePersonIds, person)
+    .filter((transaction) => !transaction.category?.excludedFromSpending);
 
   const monthlyMap = new Map<string, number>();
   const categoryMap = new Map<string, number>();
@@ -506,7 +511,10 @@ export async function getFiDashboard(person: PersonFilter = "COMBINED") {
   const [settings, excludedCategories, transactions, snapshots, people] =
     await Promise.all([
       db.appSettings.findUnique({ where: { id: "default" } }),
-      db.category.findMany({ where: { excludedFromFi: true }, select: { id: true } }),
+      db.category.findMany({
+        where: { OR: [{ excludedFromFi: true }, { excludedFromSpending: true }] },
+        select: { id: true },
+      }),
       getTransactionsWithDetails({}),
       db.netWorthSnapshot.findMany({
         include: { balances: true },
@@ -620,6 +628,7 @@ export async function getCashFlow(person: PersonFilter = "COMBINED") {
   const categoriesByMonth = new Map<string, Map<string, number>>();
 
   for (const transaction of mapped) {
+    if (transaction.category?.excludedFromSpending) continue;
     const key = monthKey(transaction.date);
     expensesByMonth.set(
       key,
