@@ -37,7 +37,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  describeSplitRows,
   evenSplit,
   SplitEditor,
   splitTotal,
@@ -317,13 +316,28 @@ export function TransactionsTable({
                 </div>
               </TableCell>
               <TableCell>{accountLabel(transaction.account)}</TableCell>
-              <TableCell className="whitespace-nowrap">
-                {describeSplitRows(transaction.splits, people)}
-                {transaction.hasOverride ? (
-                  <Badge variant="outline" className="ml-2">
-                    override
-                  </Badge>
-                ) : null}
+              <TableCell>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {transaction.splits.filter((split) => split.percent > 0).length > 0 ? (
+                    transaction.splits
+                      .filter((split) => split.percent > 0)
+                      .map((split) => {
+                        const owner = people.find((person) => person.id === split.personId);
+                        return (
+                          <PersonBadge
+                            key={split.personId}
+                            name={`${owner?.name ?? "Unknown"} ${split.percent}%`}
+                            color={owner?.color}
+                          />
+                        );
+                      })
+                  ) : (
+                    <Badge variant="outline">Unassigned</Badge>
+                  )}
+                  {transaction.hasOverride ? (
+                    <Badge variant="outline">override</Badge>
+                  ) : null}
+                </div>
               </TableCell>
               {activePeople.map((person) => (
                 <TableCell key={person.id} className="text-right tabular-nums">
