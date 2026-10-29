@@ -1,12 +1,14 @@
 import { requireAuth, jsonOk, jsonError, jsonDbError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { z } from "zod";
+import { logoSchema } from "@/lib/logo";
 
 const accountSchema = z.object({
   name: z.string().trim().min(1).optional(),
   assetType: z.enum(["CHECKING", "SAVINGS", "BROKERAGE", "RSU", "FOUR_O_ONE_K", "ROTH_IRA", "HSA", "CRYPTO", "HOME_VALUE"]).nullable().optional(),
   liabilityType: z.enum(["MORTGAGE", "CAR_LOAN", "CREDIT_CARD"]).nullable().optional(),
   personId: z.string().nullable().optional(),
+  logo: logoSchema.nullable().optional(),
 }).refine((value) => {
   if (value.assetType === undefined && value.liabilityType === undefined) return true;
   return Boolean(value.assetType) !== Boolean(value.liabilityType);

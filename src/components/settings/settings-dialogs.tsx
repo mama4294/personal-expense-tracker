@@ -27,7 +27,9 @@ import {
   type Person,
   type SplitRow,
 } from "@/components/people/split-editor";
+import { AccountLogo } from "@/components/net-worth/account-logo";
 import { DEFAULT_PERSON_COLOR } from "@/lib/colors";
+import { fileToLogoDataUrl } from "@/lib/logo";
 import { ASSET_LABELS, LIABILITY_LABELS } from "@/lib/utils";
 
 type SaveResult = { ok: boolean; error?: string };
@@ -633,6 +635,7 @@ export function NetWorthAccountDialog({
     assetType: string | null;
     liabilityType: string | null;
     personId: string | null;
+    logo: string | null;
   } | null;
   people: { id: string; name: string }[];
   onSave: (values: {
@@ -640,12 +643,15 @@ export function NetWorthAccountDialog({
     assetType: string | null;
     liabilityType: string | null;
     personId: string | null;
+    logo: string | null;
   }) => Promise<SaveResult>;
 }) {
   const [name, setName] = useState("");
   const [kind, setKind] = useState<"asset" | "liability">("asset");
   const [type, setType] = useState(NET_WORTH_ASSETS[0]);
   const [personId, setPersonId] = useState("combined");
+  const [logo, setLogo] = useState<string | null>(null);
+  const [logoError, setLogoError] = useState<string | null>(null);
   const [seeded, setSeeded] = useState<string | null>(null);
   const key = account?.id ?? "new";
   if (open && seeded !== key) {
@@ -655,6 +661,8 @@ export function NetWorthAccountDialog({
     setType(account?.assetType ?? account?.liabilityType ?? NET_WORTH_ASSETS[0]);
     setName(account?.name ?? "");
     setPersonId(account?.personId ?? "combined");
+    setLogo(account?.logo ?? null);
+    setLogoError(null);
   }
   if (!open && seeded !== null) setSeeded(null);
 
@@ -671,11 +679,48 @@ export function NetWorthAccountDialog({
         assetType: kind === "asset" ? type : null,
         liabilityType: kind === "liability" ? type : null,
         personId: personId === "combined" ? null : personId,
+        logo,
       })}
     >
       <div className="space-y-2">
         <Label htmlFor="net-worth-account-name">Account name</Label>
         <Input id="net-worth-account-name" value={name} onChange={(event) => setName(event.target.value)} autoFocus placeholder="Vanguard Brokerage" />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="net-worth-account-logo">Logo</Label>
+        <div className="flex items-center gap-3">
+          <AccountLogo name={name || "?"} logo={logo} className="h-10 w-10 text-xs" />
+          <Button variant="outline" size="sm" asChild>
+            <label htmlFor="net-worth-account-logo" className="cursor-pointer">
+              {logo ? "Change" : "Upload"}
+            </label>
+          </Button>
+          <input
+            id="net-worth-account-logo"
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            onChange={async (event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (!file) return;
+              try {
+                setLogo(await fileToLogoDataUrl(file));
+                setLogoError(null);
+              } catch (error) {
+                setLogoError(error instanceof Error ? error.message : "Could not read the image.");
+              }
+            }}
+          />
+          {logo ? (
+            <Button type="button" variant="ghost" size="sm" onClick={() => setLogo(null)}>
+              Remove
+            </Button>
+          ) : null}
+        </div>
+        <p className={logoError ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
+          {logoError ?? "Optional. Shown next to the account name; initials are used otherwise."}
+        </p>
       </div>
       <div className="space-y-2">
         <Label>Account kind</Label>

@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input, Textarea } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { AccountName } from "@/components/net-worth/account-logo";
 import { ASSET_LABELS, formatCurrency, LIABILITY_LABELS } from "@/lib/utils";
 
 export const COMBINED = "";
@@ -19,6 +20,7 @@ export type BalanceRow = {
   key: string;
   accountId: string;
   name: string;
+  logo: string | null;
   category: string;
   personName: string;
   amount: string;
@@ -30,6 +32,7 @@ export type ConfiguredNetWorthAccount = {
   assetType: string | null;
   liabilityType: string | null;
   personId: string | null;
+  logo?: string | null;
   person?: { id: string; name: string } | null;
 };
 
@@ -46,6 +49,7 @@ export function rowsForAccounts(
     key: account.id,
     accountId: account.id,
     name: account.name,
+    logo: account.logo ?? null,
     category: account.assetType
       ? ASSET_LABELS[account.assetType]
       : LIABILITY_LABELS[account.liabilityType ?? ""],
@@ -162,7 +166,7 @@ export function NetWorthDialog({
                   return (
                     <div key={row.key} className="grid grid-cols-[1fr_150px] items-center gap-3 rounded-lg border border-border p-3 sm:border-0 sm:p-1">
                       <div>
-                        <p className="font-medium">{row.name}</p>
+                        <p className="font-medium"><AccountName name={row.name} logo={row.logo} /></p>
                         <p className="text-xs text-muted-foreground">{row.category} · {row.personName}</p>
                       </div>
                       <div className="space-y-1">

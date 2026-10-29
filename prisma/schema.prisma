@@ -212,6 +212,8 @@ model NetWorthSnapshot {
 model NetWorthAccount {
   id            String           @id @default(cuid())
   name          String           @unique
+  /// Small square logo as an image data URL, resized client-side before upload.
+  logo          String?
   assetType     AssetType?
   liabilityType LiabilityType?
   personId      String?
