@@ -6,6 +6,7 @@ import {
   ArrowLeftRight,
   BarChart3,
   DollarSign,
+  House,
   Landmark,
   Settings,
   Target,
@@ -14,7 +15,8 @@ import { SignOutButton } from "@/components/auth/sign-out-button";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/", label: "Spending", icon: BarChart3 },
+  { href: "/", label: "Home", icon: House },
+  { href: "/spending", label: "Spending", icon: BarChart3 },
   { href: "/income", label: "Income", icon: DollarSign },
   { href: "/cash-flow", label: "Cash Flow", icon: ArrowLeftRight },
   { href: "/net-worth", label: "Net Worth", icon: Landmark },

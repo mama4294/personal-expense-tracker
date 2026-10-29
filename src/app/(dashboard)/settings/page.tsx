@@ -23,6 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ColorDot } from "@/components/settings/color-picker";
+import { AccountName } from "@/components/net-worth/account-logo";
 import { PersonBadge } from "@/components/people/person-badge";
 import {
   AccountDialog,
@@ -55,6 +56,7 @@ type NetWorthAccount = {
   assetType: string | null;
   liabilityType: string | null;
   personId: string | null;
+  logo: string | null;
   person: { id: string; name: string } | null;
 };
 type Category = {
@@ -563,7 +565,7 @@ export default function SettingsPage() {
                 <TableBody>
                   {netWorthAccounts.map((account) => (
                     <TableRow key={account.id}>
-                      <TableCell className="font-medium">{account.name}</TableCell>
+                      <TableCell className="font-medium"><AccountName name={account.name} logo={account.logo} /></TableCell>
                       <TableCell>{account.assetType ? ASSET_LABELS[account.assetType] : LIABILITY_LABELS[account.liabilityType ?? ""]}</TableCell>
                       <TableCell>
                         {account.person ? (

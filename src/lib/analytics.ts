@@ -20,7 +20,8 @@ import {
   netIncome,
   type Paycheck,
 } from "@/lib/income";
-import { accountLabel } from "@/lib/utils";
+import { accountLabel, ASSET_LABELS, LIABILITY_LABELS } from "@/lib/utils";
+import { groupForType, NET_WORTH_GROUPS, type NetWorthGroupKey } from "@/lib/net-worth-groups";
 import type { Prisma } from "@/generated/prisma/client";
 
 export type { PersonFilter };
@@ -497,6 +498,102 @@ export async function getNetWorthDashboard(person: PersonFilter = "COMBINED") {
     /// Held by the household rather than any one person; excluded from a
     /// person view, so the page can say so instead of quietly losing it.
     jointNetWorth,
+  };
+}
+
+/**
+ * Home page: net worth by group over time, plus every account in the latest
+ * snapshot with its recent history. Person filtering matches the net worth
+ * dashboard — jointly held accounts only appear under Combined.
+ */
+export async function getHomeDashboard(person: PersonFilter = "COMBINED") {
+  const snapshots = await db.netWorthSnapshot.findMany({
+    include: {
+      balances: {
+        include: {
+          person: { select: { id: true, name: true } },
+          account: { select: { name: true, logo: true } },
+        },
+      },
+    },
+    orderBy: { month: "asc" },
+  });
+
+  const mine = (balance: { personId: string | null }) =>
+    person === "COMBINED" ? true : balance.personId === person;
+  const accountKey = (balance: { accountId: string | null; accountName: string; personId: string | null }) =>
+    balance.accountId ?? `${balance.accountName}|${balance.personId ?? ""}`;
+
+  const timeline = snapshots.map((snapshot) => {
+    const groups = Object.fromEntries(NET_WORTH_GROUPS.map((group) => [group.key, 0])) as Record<NetWorthGroupKey, number>;
+    let assets = 0;
+    let liabilities = 0;
+    for (const balance of snapshot.balances.filter(mine)) {
+      const amount = Number(balance.amount);
+      const group = groupForType(balance.assetType ?? balance.liabilityType);
+      if (group) groups[group] += amount;
+      if (balance.assetType) assets += amount;
+      else liabilities += amount;
+    }
+    return {
+      month: snapshot.month.toISOString().slice(0, 7),
+      ...groups,
+      assets,
+      liabilities,
+      netWorth: assets - liabilities,
+    };
+  });
+
+  // Per-account amount by month, for sparklines and month-over-month change.
+  const history = new Map<string, Map<string, number>>();
+  for (const snapshot of snapshots) {
+    const month = snapshot.month.toISOString().slice(0, 7);
+    for (const balance of snapshot.balances.filter(mine)) {
+      const key = accountKey(balance);
+      const amounts = history.get(key) ?? new Map<string, number>();
+      amounts.set(month, Number(balance.amount));
+      history.set(key, amounts);
+    }
+  }
+
+  const latest = snapshots.at(-1);
+  const months = timeline.map((entry) => entry.month);
+  const latestMonth = months.at(-1) ?? null;
+  const previousMonth = months.at(-2) ?? null;
+  const recentMonths = months.slice(-12);
+
+  const accounts = (latest?.balances ?? []).filter(mine).map((balance) => {
+    const type = balance.assetType ?? balance.liabilityType ?? "";
+    const amounts = history.get(accountKey(balance))!;
+    return {
+      key: accountKey(balance),
+      name: balance.account?.name ?? balance.accountName,
+      logo: balance.account?.logo ?? null,
+      typeLabel: balance.assetType ? ASSET_LABELS[type] : LIABILITY_LABELS[type],
+      group: groupForType(type),
+      person: balance.person,
+      balance: Number(balance.amount),
+      previous: previousMonth ? (amounts.get(previousMonth) ?? null) : null,
+      history: recentMonths
+        .filter((month) => amounts.has(month))
+        .map((month) => ({ month, amount: amounts.get(month)! })),
+    };
+  });
+
+  return {
+    latestMonth,
+    previousMonth,
+    timeline,
+    groups: NET_WORTH_GROUPS.map((group) => ({
+      key: group.key,
+      label: group.label,
+      kind: group.kind,
+      total: timeline.at(-1)?.[group.key] ?? 0,
+      previous: timeline.at(-2)?.[group.key] ?? null,
+      accounts: accounts
+        .filter((account) => account.group === group.key)
+        .sort((a, b) => b.balance - a.balance),
+    })).filter((group) => group.accounts.length > 0),
   };
 }
 

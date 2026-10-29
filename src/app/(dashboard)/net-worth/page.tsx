@@ -30,6 +30,7 @@ import {
   type BalanceRow,
 } from "@/components/net-worth/net-worth-dialog";
 import { personColor } from "@/lib/colors";
+import { AccountName } from "@/components/net-worth/account-logo";
 import { PersonBadge } from "@/components/people/person-badge";
 import { NetWorthImportDialog } from "@/components/import/financial-import-dialogs";
 import {
@@ -51,6 +52,7 @@ type Balance = {
   accountId: string | null;
   personId: string | null;
   person: { id: string; name: string } | null;
+  account: { logo: string | null } | null;
 };
 
 type Snapshot = {
@@ -412,10 +414,13 @@ export default function NetWorthPage() {
                                 key={balance.id}
                                 className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2 text-sm"
                               >
-                                <span>
-                                  {balance.accountName || (balance.assetType
-                                    ? ASSET_LABELS[balance.assetType]
-                                    : LIABILITY_LABELS[balance.liabilityType ?? ""])}
+                                <span className="flex min-w-0 flex-wrap items-center">
+                                  <AccountName
+                                    name={balance.accountName || (balance.assetType
+                                      ? ASSET_LABELS[balance.assetType]
+                                      : LIABILITY_LABELS[balance.liabilityType ?? ""])}
+                                    logo={balance.account?.logo}
+                                  />
                                   {balance.person ? (
                                     <PersonBadge
                                       name={balance.person.name}
