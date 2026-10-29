@@ -1,0 +1,13 @@
+import { requireAuth, jsonOk } from "@/lib/api";
+import { getHomeDashboard } from "@/lib/analytics";
+
+export async function GET(request: Request) {
+  const { error } = await requireAuth();
+  if (error) return error;
+
+  const person = new URL(request.url).searchParams.get("person");
+
+  return jsonOk(
+    await getHomeDashboard(person && person !== "COMBINED" ? person : "COMBINED"),
+  );
+}

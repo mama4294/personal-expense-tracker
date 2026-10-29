@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Search, SlidersHorizontal, Upload, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { ArrowDown, ArrowUp, ChevronDown, Download, Plus, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/table";
 import {
   Select,
   SelectContent,
@@ -13,280 +13,211 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SERIES_COLORS } from "@/components/charts/dashboard-charts";
 import {
-  Badge,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  SimpleBarChart,
-  SimpleLineChart,
-  SimplePieChart,
-  StatCard,
-} from "@/components/charts/dashboard-charts";
+  NetWorthBreakdownChart,
+  Sparkline,
+  type BreakdownSeries,
+} from "@/components/home/net-worth-breakdown-chart";
 import { PersonToggle } from "@/components/filters/person-toggle";
-import {
-  DateRangePicker,
-  defaultRange,
-  type DateRange,
-} from "@/components/filters/date-range";
-import { ExpenseDialog } from "@/components/expenses/expense-dialog";
-import { ImportDialog } from "@/components/expenses/import-dialog";
-import {
-  TransactionsTable,
-  type Transaction,
-} from "@/components/expenses/transactions-table";
-import type { Person } from "@/components/people/split-editor";
-import { personColor } from "@/lib/colors";
-import {
-  accountLabel,
-  formatCurrency,
-  formatCurrencyPrecise,
-  formatMonthLabel,
-  formatPercent,
-} from "@/lib/utils";
+import { AccountLogo } from "@/components/net-worth/account-logo";
+import { PersonBadge } from "@/components/people/person-badge";
+import { NET_WORTH_GROUPS, type NetWorthGroupKey } from "@/lib/net-worth-groups";
+import { cn, formatCurrency, formatCurrencyPrecise, formatMonthLabel } from "@/lib/utils";
 
-type SpendingData = {
-  /// Still used for the category drill-down share, just no longer a stat card.
-  totalSpending: number;
-  projectedAnnualSpend: number;
-  projectionMonths: number;
-  monthlySpending: { month: string; total: number }[];
-  spendingByCategory: { name: string; total: number }[];
-  spendingByAccount: { name: string; total: number }[];
-  spendingByPerson: { name: string; total: number }[];
-  yearOverYear: { year: string; total: number }[];
+type Person = { id: string; name: string; isActive: boolean; color: string };
+
+type HomeAccount = {
+  key: string;
+  name: string;
+  logo: string | null;
+  typeLabel: string;
+  group: NetWorthGroupKey;
+  person: { id: string; name: string } | null;
+  balance: number;
+  previous: number | null;
+  history: { month: string; amount: number }[];
 };
 
-type Option = { id: string; name: string };
-type AccountOption = Option & { nickname: string | null };
-
-type Filters = {
-  person: string;
-  startDate: string;
-  endDate: string;
-  categoryId: string;
-  accountId: string;
-  tag: string;
-  minAmount: string;
-  maxAmount: string;
-  search: string;
+type HomeGroup = {
+  key: NetWorthGroupKey;
+  label: string;
+  kind: "asset" | "liability";
+  total: number;
+  previous: number | null;
+  accounts: HomeAccount[];
 };
+
+type HomeData = {
+  latestMonth: string | null;
+  previousMonth: string | null;
+  timeline: ({ month: string; assets: number; liabilities: number; netWorth: number } & Record<NetWorthGroupKey, number>)[];
+  groups: HomeGroup[];
+};
+
+/** Fixed slot per group, so a filter that hides a group never repaints the rest. */
+const GROUP_COLORS: Record<NetWorthGroupKey, string> = {
+  cash: SERIES_COLORS[0],
+  investments: SERIES_COLORS[1],
+  property: SERIES_COLORS[2],
+  creditCards: SERIES_COLORS[3],
+  loans: SERIES_COLORS[4],
+};
+
+const TOTALS_SERIES: BreakdownSeries[] = [
+  { key: "assets", name: "Assets", color: SERIES_COLORS[0] },
+  { key: "liabilities", name: "Liabilities", color: SERIES_COLORS[3], negative: true },
+];
+
+const UP_COLOR = "#1baf7a";
+const DOWN_COLOR = "#e34948";
 
 /**
- * Resolved at call time, not module load, so the default range is still right
- * for a tab left open across a month boundary.
+ * Month-over-month change. For a liability, a rising balance is bad news, so
+ * the colour follows whether the change helps net worth, not its sign.
  */
-function defaultFilters(): Filters {
-  return {
-    person: "COMBINED",
-    ...defaultRange(),
-    categoryId: "",
-    accountId: "",
-    tag: "",
-    minAmount: "",
-    maxAmount: "",
-    search: "",
-  };
+function Change({
+  current,
+  previous,
+  liability = false,
+  suffix,
+  className,
+}: {
+  current: number;
+  previous: number | null;
+  liability?: boolean;
+  suffix?: string;
+  className?: string;
+}) {
+  if (previous === null) return null;
+  const delta = current - previous;
+  const percent = previous !== 0 ? (delta / Math.abs(previous)) * 100 : null;
+  const good = liability ? delta <= 0 : delta >= 0;
+  const Icon = delta >= 0 ? ArrowUp : ArrowDown;
+  return (
+    <span className={cn("inline-flex items-center gap-1 text-sm", className)}>
+      <span
+        className="inline-flex items-center gap-0.5 font-medium tabular-nums"
+        style={{ color: delta === 0 ? undefined : good ? "#047857" : "#b91c1c" }}
+      >
+        <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+        {formatCurrency(Math.abs(delta))}
+        {percent !== null ? ` (${Math.abs(percent).toFixed(1)}%)` : ""}
+      </span>
+      {suffix ? <span className="text-muted-foreground">{suffix}</span> : null}
+    </span>
+  );
 }
 
-function toQuery(filters: Partial<Filters>) {
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(filters)) {
-    if (value) params.set(key, value);
-  }
-  return params.toString();
+function downloadCsv(groups: HomeGroup[], month: string | null) {
+  const escape = (value: string) => `"${value.replaceAll('"', '""')}"`;
+  const lines = [
+    ["Group", "Account", "Category", "Owner", "Balance"].join(","),
+    ...groups.flatMap((group) =>
+      group.accounts.map((account) =>
+        [
+          escape(group.label),
+          escape(account.name),
+          escape(account.typeLabel),
+          escape(account.person?.name ?? "Combined"),
+          (group.kind === "liability" ? -account.balance : account.balance).toFixed(2),
+        ].join(","),
+      ),
+    ),
+  ];
+  const url = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `net-worth-${month ?? "accounts"}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
-export default function SpendingPage() {
-  const [filters, setFilters] = useState<Filters>(defaultFilters);
-  const [data, setData] = useState<SpendingData | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [categories, setCategories] = useState<Option[]>([]);
-  const [accounts, setAccounts] = useState<AccountOption[]>([]);
+export default function HomePage() {
+  const [data, setData] = useState<HomeData | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
-  const [showMoreFilters, setShowMoreFilters] = useState(false);
-  const [expenseOpen, setExpenseOpen] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
+  const [person, setPerson] = useState("COMBINED");
+  const [view, setView] = useState<"breakdown" | "totals">("breakdown");
+  const [range, setRange] = useState<"12" | "all">("12");
+  const [summaryMode, setSummaryMode] = useState<"totals" | "percent">("totals");
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
-  const activePeople = useMemo(
-    () => people.filter((person) => person.isActive),
-    [people],
-  );
-
-  const selectedCategory = categories.find(
-    (category) => category.id === filters.categoryId,
-  );
-  const selectedAccount = accounts.find(
-    (account) => account.id === filters.accountId,
-  );
-
-  /** Charts follow whoever is selected; Combined keeps the default blue. */
-  const activeColor = personColor(
-    activePeople.find((entry) => entry.id === filters.person)?.color,
-  );
-  const colorByPerson = Object.fromEntries(
-    activePeople.map((entry) => [entry.name, personColor(entry.color)]),
-  );
-
-  /**
-   * The charts deliberately ignore the category filter. Drilling into a
-   * category should filter the list below without collapsing the chart you
-   * clicked to a single slice.
-   */
-  const scopeFilters = useMemo(
-    () => ({ ...filters, categoryId: "" }),
-    [filters],
-  );
-
-  const loadReference = useCallback(async () => {
-    try {
-      const responses = await Promise.all([
-        fetch("/api/categories"),
-        fetch("/api/accounts"),
-        fetch("/api/people"),
-      ]);
-      const failedResponse = responses.find((response) => !response.ok);
-      if (failedResponse) {
-        const body = await failedResponse.json().catch(() => null);
-        throw new Error(body?.error ?? `Could not load reference data (${failedResponse.status}).`);
-      }
-
-      const [categoryData, accountData, peopleData] = await Promise.all(
-        responses.map((response) => response.json()),
-      );
-      setCategories(categoryData);
-      setAccounts(accountData);
-      setPeople(peopleData);
-    } catch (loadError) {
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Could not load categories, accounts, and people.",
-      );
-    }
-  }, []);
-
-  const loadDashboard = useCallback(async () => {
-    const [spendingResponse, transactionResponse] = await Promise.all([
-      fetch(`/api/dashboard/spending?${toQuery(scopeFilters)}`),
-      fetch(`/api/transactions?${toQuery(filters)}`),
+  const load = useCallback(async () => {
+    const [homeResponse, peopleResponse] = await Promise.all([
+      fetch(`/api/dashboard/home?person=${person}`),
+      fetch("/api/people"),
     ]);
-
-    if (!spendingResponse.ok || !transactionResponse.ok) {
-      setError("Could not load spending data.");
+    if (!homeResponse.ok || !peopleResponse.ok) {
+      setError("Could not load your accounts.");
       return;
     }
-
-    setData(await spendingResponse.json());
-    setTransactions(await transactionResponse.json());
-  }, [filters, scopeFilters]);
-
-  useEffect(() => {
-    async function run() {
-      await loadReference();
-    }
-    run();
-  }, [loadReference]);
+    setError(null);
+    setData(await homeResponse.json());
+    setPeople(await peopleResponse.json());
+  }, [person]);
 
   useEffect(() => {
     async function run() {
-      await loadDashboard();
+      await load();
     }
     run();
-  }, [loadDashboard]);
+  }, [load]);
 
-  /** Clicking a category toggles the drill-down. */
-  function selectCategory(name: string) {
-    const category = categories.find((item) => item.name === name);
-    if (!category) return;
+  const activePeople = people.filter((entry) => entry.isActive);
+  const colorFor = (personId: string) => people.find((entry) => entry.id === personId)?.color;
 
-    setFilters((current) => ({
-      ...current,
-      categoryId: current.categoryId === category.id ? "" : category.id,
+  const timeline = data?.timeline ?? [];
+  const latest = timeline.at(-1);
+  const previous = timeline.at(-2);
+  const chartData = range === "12" ? timeline.slice(-12) : timeline;
+  const groups = data?.groups ?? [];
+  const assetGroups = groups.filter((group) => group.kind === "asset");
+  const liabilityGroups = groups.filter((group) => group.kind === "liability");
+
+  const breakdownSeries: BreakdownSeries[] = NET_WORTH_GROUPS
+    .filter((group) => groups.some((entry) => entry.key === group.key))
+    .map((group) => ({
+      key: group.key,
+      name: group.label,
+      color: GROUP_COLORS[group.key],
+      negative: group.kind === "liability",
     }));
-  }
 
-  function selectAccount(label: string) {
-    // The chart is labelled with nicknames, so match on the same label rather
-    // than the CSV name.
-    const account = accounts.find((item) => accountLabel(item) === label);
-    if (!account) return;
+  const toggleGroup = (key: string) =>
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
-    setFilters((current) => ({
-      ...current,
-      accountId: current.accountId === account.id ? "" : account.id,
-    }));
-  }
-
-  // Sum the filtered share, so the header agrees with the charts when a single
-  // person is selected rather than totalling everyone's amounts.
-  const listedTotal = transactions.reduce(
-    (sum, transaction) =>
-      sum - (transaction.category?.excludedFromSpending ? 0 : transaction.filteredAmount),
-    0,
-  );
-
-  const categoryShare =
-    selectedCategory && data
-      ? (data.spendingByCategory.find((item) => item.name === selectedCategory.name)
-          ?.total ?? 0)
-      : 0;
-
-  const chips: { label: string; clear: () => void }[] = [];
-  if (selectedCategory) {
-    chips.push({
-      label: `Category: ${selectedCategory.name}`,
-      clear: () => setFilters({ ...filters, categoryId: "" }),
-    });
-  }
-  if (filters.accountId) {
-    chips.push({
-      label: `Account: ${accountLabel(selectedAccount)}`,
-      clear: () => setFilters({ ...filters, accountId: "" }),
-    });
-  }
-  if (filters.tag) {
-    chips.push({
-      label: `Tag: ${filters.tag}`,
-      clear: () => setFilters({ ...filters, tag: "" }),
-    });
-  }
-  if (filters.search) {
-    chips.push({
-      label: `Search: ${filters.search}`,
-      clear: () => setFilters({ ...filters, search: "" }),
-    });
-  }
-  if (filters.minAmount || filters.maxAmount) {
-    chips.push({
-      label: `Amount: ${filters.minAmount || "0"}–${filters.maxAmount || "∞"}`,
-      clear: () => setFilters({ ...filters, minAmount: "", maxAmount: "" }),
-    });
-  }
+  const previousLabel = data?.previousMonth ? `since ${formatMonthLabel(data.previousMonth)}` : undefined;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-semibold">Spending</h2>
+          <h2 className="text-2xl font-semibold">Accounts</h2>
           <p className="text-sm text-muted-foreground">
-            Import, review, and drill into every expense.
+            {data?.latestMonth
+              ? `Balances as of ${formatMonthLabel(data.latestMonth)}.`
+              : "Your net worth across every account."}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
-            <Upload className="h-4 w-4" />
-            Import CSV
+        <div className="flex flex-wrap items-center gap-3">
+          <PersonToggle people={activePeople} value={person} onChange={setPerson} />
+          <Button variant="outline" asChild>
+            <Link href="/net-worth">
+              <RefreshCw className="h-4 w-4" />
+              Update balances
+            </Link>
           </Button>
-          <Button onClick={() => setExpenseOpen(true)}>
-            <Plus className="h-4 w-4" />
-            Add Expense
+          <Button asChild>
+            <Link href="/settings">
+              <Plus className="h-4 w-4" />
+              Add account
+            </Link>
           </Button>
         </div>
       </div>
@@ -294,337 +225,203 @@ export default function SpendingPage() {
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
       <Card>
-        <CardContent className="space-y-4 p-4">
-          <PersonToggle
-            people={activePeople}
-            value={filters.person}
-            onChange={(person) => setFilters({ ...filters, person })}
-          />
-
-          <DateRangePicker
-            range={{ startDate: filters.startDate, endDate: filters.endDate }}
-            onChange={(range: DateRange) => setFilters({ ...filters, ...range })}
-          />
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Projected Annual Spend"
-          value={formatCurrency(data?.projectedAnnualSpend ?? 0)}
-          hint={
-            data?.projectionMonths
-              ? `Run rate from ${data.projectionMonths} ${data.projectionMonths === 1 ? "month" : "months"}`
-              : "No spending yet"
-          }
-        />
-        <StatCard
-          label="Months Tracked"
-          value={String(data?.monthlySpending.length ?? 0)}
-        />
-        <StatCard
-          label="Categories"
-          value={String(data?.spendingByCategory.length ?? 0)}
-        />
-        <StatCard
-          label="Accounts"
-          value={String(data?.spendingByAccount.length ?? 0)}
-        />
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Monthly Spending</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <SimpleBarChart
-              data={data?.monthlySpending ?? []}
-              xKey="month"
-              yKey="total"
-              name="Spending"
-              color={activeColor}
-              xTickFormatter={formatMonthLabel}
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Spending by Category</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Click a slice to filter the transactions below.
-            </p>
-          </CardHeader>
-          <CardContent>
-            <SimplePieChart
-              data={data?.spendingByCategory ?? []}
-              onSelect={selectCategory}
-              selected={selectedCategory?.name ?? null}
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Spending by Account</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Click a bar to filter the transactions below.
-            </p>
-          </CardHeader>
-          <CardContent>
-            <SimpleBarChart
-              data={data?.spendingByAccount ?? []}
-              xKey="name"
-              yKey="total"
-              name="Spending"
-              color={activeColor}
-              onSelect={selectAccount}
-              selected={selectedAccount ? accountLabel(selectedAccount) : null}
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Spending by Person</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <SimpleBarChart
-              data={data?.spendingByPerson ?? []}
-              xKey="name"
-              yKey="total"
-              name="Spending"
-              colorByLabel={colorByPerson}
-            />
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Year over Year</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <SimpleLineChart
-              data={data?.yearOverYear ?? []}
-              xKey="year"
-              lines={[{ key: "total", color: activeColor, name: "Total" }]}
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Category Breakdown</CardTitle>
-          </CardHeader>
-          <CardContent className="max-h-[320px] overflow-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Category</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                  <TableHead className="text-right">Share</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(data?.spendingByCategory ?? []).map((category) => (
-                  <TableRow
-                    key={category.name}
-                    onClick={() => selectCategory(category.name)}
-                    className="cursor-pointer"
-                  >
-                    <TableCell>
-                      {category.name}
-                      {selectedCategory?.name === category.name ? (
-                        <Badge variant="default" className="ml-2">
-                          filtered
-                        </Badge>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatCurrencyPrecise(category.total)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatPercent(
-                        data && data.totalSpending > 0
-                          ? category.total / data.totalSpending
-                          : 0,
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {(data?.spendingByCategory.length ?? 0) === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={3} className="text-muted-foreground">
-                      No spending in this range.
-                    </TableCell>
-                  </TableRow>
+        <CardContent className="space-y-4 p-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">Net worth</p>
+              <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <p className="text-3xl font-semibold tracking-tight tabular-nums">
+                  {formatCurrencyPrecise(latest?.netWorth ?? 0)}
+                </p>
+                {latest ? (
+                  <Change current={latest.netWorth} previous={previous?.netWorth ?? null} suffix={previousLabel} />
                 ) : null}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            {selectedCategory ? `${selectedCategory.name} — ` : ""}Transactions
-            {" · "}
-            {formatCurrencyPrecise(listedTotal)}
-          </CardTitle>
-          {selectedCategory && data && data.totalSpending > 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {formatPercent(categoryShare / data.totalSpending)} of{" "}
-              {formatCurrency(data.totalSpending)} in this range.
-            </p>
-          ) : null}
-        </CardHeader>
-        <CardContent className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-1 flex-wrap items-center gap-2">
-            {/* Search is the filter reached for most often, so it stays out
-                of the collapsible panel. */}
-            <div className="relative min-w-[220px] flex-1 sm:max-w-xs">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                aria-label="Search transactions"
-                placeholder="Search description or notes"
-                className="pl-9"
-                value={filters.search}
-                onChange={(event) =>
-                  setFilters({ ...filters, search: event.target.value })
-                }
-              />
+              </div>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowMoreFilters((open) => !open)}
-            >
-              <SlidersHorizontal className="h-4 w-4" />
-              {showMoreFilters ? "Fewer filters" : "More filters"}
-            </Button>
-          </div>
-        </div>
-
-        {showMoreFilters ? (
-          <div className="grid gap-4 border-t border-border pt-4 md:grid-cols-2 xl:grid-cols-4">
-            <div className="space-y-2">
-              <Label>Account</Label>
-              <Select
-                value={filters.accountId || "all"}
-                onValueChange={(value) =>
-                  setFilters({
-                    ...filters,
-                    accountId: value === "all" ? "" : value,
-                  })
-                }
-              >
-                <SelectTrigger><SelectValue placeholder="All accounts" /></SelectTrigger>
+            <div className="flex gap-2">
+              <Select value={view} onValueChange={(value) => setView(value as typeof view)}>
+                <SelectTrigger className="w-44" aria-label="Chart view"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All accounts</SelectItem>
-                  {accounts.map((account) => (
-                    <SelectItem key={account.id} value={account.id}>
-                      {accountLabel(account)}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="breakdown">Breakdown</SelectItem>
+                  <SelectItem value="totals">Assets vs. liabilities</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={range} onValueChange={(value) => setRange(value as typeof range)}>
+                <SelectTrigger className="w-40" aria-label="Time range"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="12">Last 12 months</SelectItem>
+                  <SelectItem value="all">All time</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label>Tag</Label>
-              <Input
-                placeholder="e.g. Vacation"
-                value={filters.tag}
-                onChange={(event) =>
-                  setFilters({ ...filters, tag: event.target.value })
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Min Amount</Label>
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0.00"
-                value={filters.minAmount}
-                onChange={(event) =>
-                  setFilters({ ...filters, minAmount: event.target.value })
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Max Amount</Label>
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="No limit"
-                value={filters.maxAmount}
-                onChange={(event) =>
-                  setFilters({ ...filters, maxAmount: event.target.value })
-                }
-              />
-            </div>
-            <div className="flex items-end md:col-span-2 xl:col-span-4">
-              <Button variant="outline" onClick={() => setFilters(defaultFilters())}>
-                Reset all filters
-              </Button>
-            </div>
           </div>
-        ) : null}
-
-        {chips.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
-            {chips.map((chip) => (
-              <button
-                key={chip.label}
-                type="button"
-                onClick={chip.clear}
-                className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {chip.label}
-                <X className="h-3 w-3" />
-              </button>
-            ))}
-          </div>
-        ) : null}
-
-          <TransactionsTable
-            transactions={transactions}
-            people={people}
-            categories={categories}
-            onChanged={loadDashboard}
-            onError={setError}
-            resetKey={toQuery(filters)}
-          />
+          {timeline.length > 0 ? (
+            <NetWorthBreakdownChart
+              data={chartData}
+              series={view === "breakdown" ? breakdownSeries : TOTALS_SERIES}
+            />
+          ) : (
+            <div className="py-16 text-center text-sm text-muted-foreground">
+              {data ? (
+                <>
+                  No balances recorded yet.{" "}
+                  <Link href="/net-worth" className="font-medium text-primary hover:underline">Add your first month</Link>.
+                </>
+              ) : "Loading…"}
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      <ExpenseDialog
-        open={expenseOpen}
-        onOpenChange={setExpenseOpen}
-        people={activePeople}
-        categories={categories}
-        accounts={accounts}
-        onSaved={async () => {
-          await loadReference();
-          await loadDashboard();
-        }}
-      />
+      {groups.length > 0 ? (
+        <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-4">
+            {groups.map((group) => {
+              const open = !collapsed.has(group.key);
+              const liability = group.kind === "liability";
+              return (
+                <Card key={group.key} className="overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.key)}
+                    aria-expanded={open}
+                    className="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-1 px-5 py-4 text-left hover:bg-muted"
+                  >
+                    <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <ChevronDown
+                        className={cn("h-4 w-4 text-muted-foreground transition-transform", !open && "-rotate-90")}
+                        aria-hidden="true"
+                      />
+                      <span className="font-semibold">{group.label}</span>
+                      <Change current={group.total} previous={group.previous} liability={liability} suffix={previousLabel} />
+                    </span>
+                    <span className="font-semibold tabular-nums">
+                      {liability ? "−" : ""}{formatCurrencyPrecise(group.total)}
+                    </span>
+                  </button>
+                  {open ? (
+                    <ul className="divide-y divide-border border-t border-border">
+                      {group.accounts.map((account) => {
+                        const values = account.history.map((entry) => entry.amount);
+                        const trendUp = values.length > 1 && values.at(-1)! >= values[0];
+                        const trendGood = liability ? !trendUp : trendUp;
+                        return (
+                          <li key={account.key} className="flex items-center gap-4 px-5 py-3">
+                            <AccountLogo name={account.name} logo={account.logo} className="h-9 w-9 rounded-full text-xs" />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-medium">{account.name}</p>
+                              <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                {account.typeLabel}
+                                {account.person ? (
+                                  <PersonBadge name={account.person.name} color={colorFor(account.person.id)} />
+                                ) : (
+                                  <Badge variant="outline">Combined</Badge>
+                                )}
+                              </div>
+                            </div>
+                            <div className="hidden sm:block">
+                              <Sparkline values={values} color={trendGood ? UP_COLOR : DOWN_COLOR} />
+                            </div>
+                            <div className="text-right">
+                              <p className="font-medium tabular-nums">
+                                {liability ? "−" : ""}{formatCurrencyPrecise(account.balance)}
+                              </p>
+                              <Change
+                                current={account.balance}
+                                previous={account.previous}
+                                liability={liability}
+                                className="justify-end text-xs"
+                              />
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : null}
+                </Card>
+              );
+            })}
+          </div>
 
-      <ImportDialog
-        open={importOpen}
-        onOpenChange={setImportOpen}
-        onImported={async () => {
-          await loadReference();
-          await loadDashboard();
-        }}
-      />
+          <Card className="xl:sticky xl:top-24">
+            <CardContent className="space-y-6 p-5">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-lg font-semibold">Summary</h3>
+                <div role="group" aria-label="Summary values" className="inline-flex gap-1 rounded-lg border border-border bg-muted p-1">
+                  {(["totals", "percent"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      aria-pressed={summaryMode === mode}
+                      onClick={() => setSummaryMode(mode)}
+                      className={cn(
+                        "rounded-md px-3 py-1 text-sm font-medium capitalize transition-colors",
+                        summaryMode === mode ? "bg-card shadow-sm" : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {mode}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {[
+                { title: "Assets", total: latest?.assets ?? 0, items: assetGroups },
+                { title: "Liabilities", total: latest?.liabilities ?? 0, items: liabilityGroups },
+              ].filter((section) => section.items.length > 0).map((section) => (
+                <div key={section.title} className="space-y-3">
+                  <div className="flex items-baseline justify-between">
+                    <p className="font-semibold">{section.title}</p>
+                    <p className="font-semibold tabular-nums text-muted-foreground">
+                      {formatCurrencyPrecise(section.total)}
+                    </p>
+                  </div>
+                  <div className="flex h-2.5 gap-0.5" aria-hidden="true">
+                    {section.items.map((group) => (
+                      <div
+                        key={group.key}
+                        className="rounded-full"
+                        style={{
+                          backgroundColor: GROUP_COLORS[group.key],
+                          flexGrow: Math.max(group.total, 0),
+                          flexBasis: 0,
+                          minWidth: group.total > 0 ? 6 : 0,
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <ul className="space-y-2 text-sm">
+                    {section.items.map((group) => (
+                      <li key={group.key} className="flex items-center justify-between gap-3">
+                        <span className="flex items-center gap-2">
+                          <span
+                            aria-hidden="true"
+                            className="h-2 w-2 rounded-full"
+                            style={{ backgroundColor: GROUP_COLORS[group.key] }}
+                          />
+                          {group.label}
+                        </span>
+                        <span className="tabular-nums">
+                          {summaryMode === "totals"
+                            ? formatCurrency(group.total)
+                            : `${section.total ? Math.round((group.total / section.total) * 100) : 0}%`}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+              <Button
+                variant="ghost"
+                className="w-full text-primary"
+                onClick={() => downloadCsv(groups, data?.latestMonth ?? null)}
+              >
+                <Download className="h-4 w-4" />
+                Download CSV
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
     </div>
   );
 }
