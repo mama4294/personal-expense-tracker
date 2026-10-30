@@ -59,6 +59,8 @@ export type Transaction = {
   amount: number;
   isManual: boolean;
   hasOverride: boolean;
+  /** Excluded on its own; the category can also exclude it. */
+  excludedFromSpending: boolean;
   account: { id: string; name: string; nickname: string | null } | null;
   category: { id: string; name: string; excludedFromSpending: boolean } | null;
   tags: string[];
@@ -118,6 +120,7 @@ type EditState = {
   description: string;
   notes: string;
   categoryId: string;
+  excludedFromSpending: boolean;
   tags: string;
   overrideSplit: boolean;
   splits: SplitRow[];
@@ -133,7 +136,7 @@ export function TransactionsTable({
 }: {
   transactions: Transaction[];
   people: Person[];
-  categories: Option[];
+  categories: (Option & { excludedFromSpending?: boolean })[];
   onChanged: () => void | Promise<void>;
   onError: (message: string) => void;
   /**
@@ -211,6 +214,7 @@ export function TransactionsTable({
         description: editing.description,
         notes: editing.notes,
         categoryId: editing.categoryId || null,
+        excludedFromSpending: editing.excludedFromSpending,
         tags: editing.tags
           .split(",")
           .map((tag) => tag.trim())
@@ -310,7 +314,8 @@ export function TransactionsTable({
               <TableCell>
                 <div className="flex flex-col items-start gap-1">
                   <span>{transaction.category?.name ?? "—"}</span>
-                  {transaction.category?.excludedFromSpending ? (
+                  {transaction.excludedFromSpending ||
+                  transaction.category?.excludedFromSpending ? (
                     <Badge variant="warning">Excluded from spending</Badge>
                   ) : null}
                 </div>
@@ -359,6 +364,7 @@ export function TransactionsTable({
                         description: transaction.description,
                         notes: transaction.notes ?? "",
                         categoryId: transaction.category?.id ?? "",
+                        excludedFromSpending: transaction.excludedFromSpending,
                         tags: transaction.tags.join(", "),
                         overrideSplit: transaction.hasOverride,
                         splits:
@@ -489,6 +495,24 @@ export function TransactionsTable({
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={editing.excludedFromSpending}
+                    onChange={(event) =>
+                      setEditing({ ...editing, excludedFromSpending: event.target.checked })
+                    }
+                  />
+                  Exclude from spending
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  {categories.find((category) => category.id === editing.categoryId)
+                    ?.excludedFromSpending
+                    ? "Its category is already excluded from spending."
+                    : "Leaves it out of spending totals, charts, and FI."}
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>Tags</Label>

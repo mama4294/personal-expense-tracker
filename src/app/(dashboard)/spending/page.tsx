@@ -3,7 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Search, SlidersHorizontal, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -36,6 +42,10 @@ import {
 } from "@/components/filters/date-range";
 import { ExpenseDialog } from "@/components/expenses/expense-dialog";
 import { ImportDialog } from "@/components/expenses/import-dialog";
+import {
+  CategoryMonthTable,
+  type CategoryMonthRow,
+} from "@/components/expenses/category-month-table";
 import {
   TransactionsTable,
   type Transaction,
@@ -106,6 +116,7 @@ export default function SpendingPage() {
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [data, setData] = useState<SpendingData | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [categoryMonths, setCategoryMonths] = useState<CategoryMonthRow[]>([]);
   const [categories, setCategories] = useState<Option[]>([]);
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
@@ -173,18 +184,21 @@ export default function SpendingPage() {
   }, []);
 
   const loadDashboard = useCallback(async () => {
-    const [spendingResponse, transactionResponse] = await Promise.all([
+    const [spendingResponse, transactionResponse, categoryResponse] = await Promise.all([
       fetch(`/api/dashboard/spending?${toQuery(scopeFilters)}`),
       fetch(`/api/transactions?${toQuery(filters)}`),
+      // Every month, whatever the date range: only the person filter applies.
+      fetch(`/api/dashboard/spending/categories?${toQuery({ person: filters.person })}`),
     ]);
 
-    if (!spendingResponse.ok || !transactionResponse.ok) {
+    if (!spendingResponse.ok || !transactionResponse.ok || !categoryResponse.ok) {
       setError("Could not load spending data.");
       return;
     }
 
     setData(await spendingResponse.json());
     setTransactions(await transactionResponse.json());
+    setCategoryMonths(await categoryResponse.json());
   }, [filters, scopeFilters]);
 
   useEffect(() => {
@@ -228,7 +242,10 @@ export default function SpendingPage() {
   // person is selected rather than totalling everyone's amounts.
   const listedTotal = transactions.reduce(
     (sum, transaction) =>
-      sum - (transaction.category?.excludedFromSpending ? 0 : transaction.filteredAmount),
+      sum -
+      (transaction.excludedFromSpending || transaction.category?.excludedFromSpending
+        ? 0
+        : transaction.filteredAmount),
     0,
   );
 
@@ -331,6 +348,24 @@ export default function SpendingPage() {
           value={String(data?.spendingByAccount.length ?? 0)}
         />
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Spending by Month</CardTitle>
+          <CardDescription>
+            {filters.person === "COMBINED"
+              ? "Each category's spending, month by month. Expand a category to see each person's share."
+              : "Each category's spending, month by month."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <CategoryMonthTable
+            rows={categoryMonths}
+            people={activePeople}
+            combined={filters.person === "COMBINED"}
+          />
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 xl:grid-cols-2">
         <Card>
