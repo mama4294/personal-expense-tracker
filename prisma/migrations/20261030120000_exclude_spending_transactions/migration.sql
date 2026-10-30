@@ -1,0 +1,2 @@
+ALTER TABLE "Transaction"
+ADD COLUMN "excludedFromSpending" BOOLEAN NOT NULL DEFAULT FALSE;

@@ -163,6 +163,14 @@ export function mapTransactionAmounts(
   });
 }
 
+/** Excluded on its own, or through its category. */
+function isExcludedFromSpending(transaction: {
+  excludedFromSpending: boolean;
+  category: { excludedFromSpending: boolean } | null;
+}) {
+  return transaction.excludedFromSpending || Boolean(transaction.category?.excludedFromSpending);
+}
+
 /**
  * Transaction list for the expenses table: resolved per-person amounts, and
  * when a person filter is active, only rows that person has a share of.
@@ -186,6 +194,7 @@ export async function getTransactionList(filters: DashboardFilters = {}) {
       amount: transaction.amount,
       isManual: transaction.isManual,
       hasOverride: transaction.hasOverride,
+      excludedFromSpending: transaction.excludedFromSpending,
       account: transaction.account
         ? {
             id: transaction.account.id,
@@ -216,7 +225,7 @@ export async function getSpendingDashboard(filters: DashboardFilters = {}) {
 
   const activePersonIds = people.map((entry) => entry.id);
   const mapped = mapTransactionAmounts(transactions, activePersonIds, person)
-    .filter((transaction) => !transaction.category?.excludedFromSpending);
+    .filter((transaction) => !isExcludedFromSpending(transaction));
 
   const monthlyMap = new Map<string, number>();
   const categoryMap = new Map<string, number>();
@@ -294,6 +303,52 @@ export async function getSpendingDashboard(filters: DashboardFilters = {}) {
       .sort(([a], [b]) => a - b)
       .map(([year, total]) => ({ year: String(year), total })),
   };
+}
+
+/**
+ * Every month's spending by category and person, regardless of the page's date
+ * range. Each person's row is their share, so a category's rows add up to its
+ * total; a person filter keeps just their share.
+ */
+export async function getSpendingByCategoryMonth(person: PersonFilter = "COMBINED") {
+  const [transactions, people] = await Promise.all([
+    getTransactionsWithDetails({}),
+    getActivePeople(),
+  ]);
+
+  // Keyed by category name, then person id ("" when nobody is assigned).
+  const byCategory = new Map<string, Map<string, Map<string, number>>>();
+
+  for (const transaction of mapTransactionAmounts(
+    transactions,
+    people.map((entry) => entry.id),
+    person,
+  )) {
+    if (isExcludedFromSpending(transaction)) continue;
+
+    const key = monthKey(transaction.date);
+    const category = transaction.category?.name ?? "Uncategorized";
+    const byPerson = byCategory.get(category) ?? new Map<string, Map<string, number>>();
+    const shares = Object.entries(transaction.amounts).filter(
+      ([personId]) => person === "COMBINED" || personId === person,
+    );
+    if (shares.length === 0 && person === "COMBINED") shares.push(["", transaction.amount]);
+
+    for (const [personId, share] of shares) {
+      const months = byPerson.get(personId) ?? new Map<string, number>();
+      months.set(key, (months.get(key) ?? 0) - share);
+      byPerson.set(personId, months);
+    }
+    byCategory.set(category, byPerson);
+  }
+
+  return Array.from(byCategory.entries()).flatMap(([category, byPerson]) =>
+    Array.from(byPerson.entries()).map(([personId, months]) => ({
+      category,
+      personId: personId || null,
+      months: Object.fromEntries(months),
+    })),
+  );
 }
 
 export async function getIncomeDashboard(filters: DashboardFilters = {}) {
@@ -629,11 +684,13 @@ export async function getFiDashboard(person: PersonFilter = "COMBINED") {
     transactions,
     activePersonIds,
     person,
-  ).map((transaction) => ({
-    date: transaction.date,
-    amount: -transaction.filteredAmount,
-    categoryId: transaction.categoryId,
-  }));
+  )
+    .filter((transaction) => !transaction.excludedFromSpending)
+    .map((transaction) => ({
+      date: transaction.date,
+      amount: -transaction.filteredAmount,
+      categoryId: transaction.categoryId,
+    }));
 
   const withdrawalRate = Number(settings?.withdrawalRate ?? 0.04);
   const annualSpending = trailingTwelveMonthSpending(
@@ -725,7 +782,7 @@ export async function getCashFlow(person: PersonFilter = "COMBINED") {
   const categoriesByMonth = new Map<string, Map<string, number>>();
 
   for (const transaction of mapped) {
-    if (transaction.category?.excludedFromSpending) continue;
+    if (isExcludedFromSpending(transaction)) continue;
     const key = monthKey(transaction.date);
     expensesByMonth.set(
       key,

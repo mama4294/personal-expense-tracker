@@ -151,6 +151,8 @@ model Transaction {
   categoryId  String?
   category    Category? @relation(fields: [categoryId], references: [id])
   isManual    Boolean  @default(false)
+  /// Left out of spending totals and FI, regardless of its category.
+  excludedFromSpending Boolean @default(false)
   importHash  String?  @unique
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
