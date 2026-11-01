@@ -16,6 +16,13 @@ const snapshotSchema = z.object({
   ),
 });
 
+/** One cell of the History grid. A null amount clears that account's balance. */
+const balanceUpdateSchema = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/, "Month must look like 2026-07."),
+  accountId: z.string().min(1),
+  amount: z.number().finite().nullable(),
+});
+
 export async function GET() {
   const { error } = await requireAuth();
   if (error) return error;
@@ -88,5 +95,63 @@ export async function POST(request: Request) {
     return jsonOk(snapshot, 201);
   } catch (saveError) {
     return jsonDbError(saveError, "Could not save the snapshot.");
+  }
+}
+
+/**
+ * Sets a single account's balance for a month, leaving the month's other
+ * balances alone. POST replaces the whole month, which would drop balances
+ * the editor never saw (such as rows that predate configured accounts).
+ */
+export async function PATCH(request: Request) {
+  const { error } = await requireAuth();
+  if (error) return error;
+
+  const parsed = balanceUpdateSchema.safeParse(await request.json());
+  if (!parsed.success) {
+    return jsonError(parsed.error.issues[0]?.message ?? "Invalid balance");
+  }
+
+  const { accountId, amount } = parsed.data;
+  const month = new Date(`${parsed.data.month}-01T00:00:00.000Z`);
+  const account = await db.netWorthAccount.findUnique({ where: { id: accountId } });
+  if (!account) return jsonError("That account no longer exists.");
+
+  try {
+    await db.$transaction(async (tx) => {
+      const snapshot = await tx.netWorthSnapshot.findUnique({ where: { month } });
+
+      if (amount === null) {
+        if (!snapshot) return;
+        await tx.netWorthBalance.deleteMany({ where: { snapshotId: snapshot.id, accountId } });
+        // A month with nothing left in it would be an empty column.
+        const remaining = await tx.netWorthBalance.count({ where: { snapshotId: snapshot.id } });
+        if (remaining === 0) await tx.netWorthSnapshot.delete({ where: { id: snapshot.id } });
+        return;
+      }
+
+      const target = snapshot ?? (await tx.netWorthSnapshot.create({ data: { month } }));
+      const updated = await tx.netWorthBalance.updateMany({
+        where: { snapshotId: target.id, accountId },
+        data: { amount },
+      });
+      if (updated.count === 0) {
+        await tx.netWorthBalance.create({
+          data: {
+            snapshotId: target.id,
+            accountId,
+            amount,
+            assetType: account.assetType,
+            liabilityType: account.liabilityType,
+            accountName: account.name,
+            personId: account.personId,
+          },
+        });
+      }
+    });
+
+    return jsonOk({ success: true });
+  } catch (saveError) {
+    return jsonDbError(saveError, "Could not save the balance.");
   }
 }

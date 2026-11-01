@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Plus, Upload } from "lucide-react";
 import { PersonToggle } from "@/components/filters/person-toggle";
 import { Button } from "@/components/ui/button";
@@ -147,6 +147,37 @@ function historyRows(snapshots: Snapshot[], accounts: ConfiguredNetWorthAccount[
   );
 }
 
+/** Snapshots with one account's balance for a month set, or removed when null. */
+function withBalance(
+  snapshots: Snapshot[],
+  month: string,
+  account: ConfiguredNetWorthAccount,
+  amount: number | null,
+): Snapshot[] {
+  return snapshots.flatMap((snapshot) => {
+    if (snapshot.month.slice(0, 7) !== month) return [snapshot];
+    const others = snapshot.balances.filter((balance) => balance.accountId !== account.id);
+    const existing = snapshot.balances.find((balance) => balance.accountId === account.id);
+    const balances = amount === null
+      ? others
+      : [
+          ...others,
+          {
+            id: existing?.id ?? `pending-${account.id}`,
+            assetType: account.assetType,
+            liabilityType: account.liabilityType,
+            amount: String(amount),
+            accountName: account.name,
+            accountId: account.id,
+            personId: account.personId,
+            person: account.person ?? null,
+            account: { name: account.name, logo: account.logo ?? null },
+          },
+        ];
+    return balances.length > 0 ? [{ ...snapshot, balances }] : [];
+  });
+}
+
 export default function NetWorthPage() {
   const [data, setData] = useState<NetWorthData | null>(null);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
@@ -158,6 +189,15 @@ export default function NetWorthPage() {
   const [draft, setDraft] = useState<{ month: string; values: Record<string, string> } | null>(null);
   const [draftSaving, setDraftSaving] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
+  /** A single History cell being edited in place. */
+  const [editingCell, setEditingCellState] = useState<{ accountId: string; month: string; value: string } | null>(null);
+  // Mirrors editingCell so a blur from an input that is going away can tell it
+  // is no longer the open cell, rather than acting on a stale render.
+  const editingCellRef = useRef(editingCell);
+  const setEditingCell = (cell: typeof editingCell) => {
+    editingCellRef.current = cell;
+    setEditingCellState(cell);
+  };
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -303,6 +343,55 @@ export default function NetWorthPage() {
     setMessage({ tone: "ok", text: `Saved ${formatMonthLabel(draft.month)} balances.` });
     setDraft(null);
     await load();
+  }
+
+  function startCellEdit(accountId: string, targetMonth: string) {
+    const amount = historyRows(snapshots, netWorthAccounts)
+      .find((row) => row.accountId === accountId)
+      ?.amounts.get(targetMonth);
+    setEditingCell({ accountId, month: targetMonth, value: amount === undefined ? "" : String(amount) });
+  }
+
+  /** Saves the cell being edited, optionally moving to another. Unchanged values aren't sent. */
+  async function commitCell(
+    from: { accountId: string; month: string },
+    next: { accountId: string; month: string } | null = null,
+  ) {
+    const cell = editingCellRef.current;
+    if (!cell || cell.accountId !== from.accountId || cell.month !== from.month) return;
+    if (next) startCellEdit(next.accountId, next.month);
+    else setEditingCell(null);
+
+    const account = netWorthAccounts.find((entry) => entry.id === cell.accountId);
+    const previous = historyRows(snapshots, netWorthAccounts)
+      .find((row) => row.accountId === cell.accountId)
+      ?.amounts.get(cell.month);
+    const amount = cell.value.trim() === "" ? null : Number(cell.value);
+    if (!account || amount === (previous ?? null)) return;
+    if (amount !== null && !Number.isFinite(amount)) {
+      setMessage({ tone: "error", text: "Balances must be numbers." });
+      return;
+    }
+
+    // Show the new value straight away; a failed save reloads the real one.
+    setSnapshots((current) => withBalance(current, cell.month, account, amount));
+    const response = await fetch("/api/net-worth", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ month: cell.month, accountId: cell.accountId, amount }),
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      setMessage({ tone: "error", text: body.error ?? "Could not save the balance." });
+    }
+    await load();
+  }
+
+  /** The editable account below this one in the same month, for Enter. */
+  function cellBelow(accountId: string) {
+    const editable = history.filter((row) => row.accountId).map((row) => row.accountId!);
+    const nextId = editable[editable.indexOf(accountId) + 1];
+    return nextId ?? null;
   }
 
   /** Enter moves down the column, like a spreadsheet. */
@@ -519,7 +608,7 @@ export default function NetWorthPage() {
           <div className="space-y-1.5">
             <CardTitle>History</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Each account&apos;s balance, month by month. Select a month to edit its balances.
+              Each account&apos;s balance, month by month. Click a balance to change it, or select a month to edit all of its balances.
             </p>
           </div>
           {draft ? (
@@ -693,6 +782,41 @@ export default function NetWorthPage() {
                               ? item.row.amounts.get(month)
                               : item.value(month);
                             const liability = item.type === "account" && item.row.kind === "liability";
+                            const accountId = item.type === "account" ? item.row.accountId : null;
+                            const editing = accountId !== null
+                              && editingCell?.accountId === accountId
+                              && editingCell.month === month;
+                            if (editing) {
+                              return (
+                                <td key={snapshot.id} className="px-2 text-right">
+                                  <Input
+                                    autoFocus
+                                    type="number"
+                                    step="0.01"
+                                    inputMode="decimal"
+                                    aria-label={`${item.type === "account" ? item.row.name : ""} balance for ${formatMonthLabel(month)}`}
+                                    value={editingCell.value}
+                                    onFocus={(event) => event.currentTarget.select()}
+                                    onChange={(event) => {
+                                      const value = event.target.value;
+                                      setEditingCell({ ...editingCell, value });
+                                    }}
+                                    onBlur={() => commitCell({ accountId, month })}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Escape") {
+                                        event.preventDefault();
+                                        setEditingCell(null);
+                                      } else if (event.key === "Enter") {
+                                        event.preventDefault();
+                                        const below = cellBelow(accountId);
+                                        commitCell({ accountId, month }, below ? { accountId: below, month } : null);
+                                      }
+                                    }}
+                                    className="ml-auto h-8 w-32 px-2 text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                  />
+                                </td>
+                              );
+                            }
                             return (
                               <td
                                 key={snapshot.id}
@@ -701,7 +825,16 @@ export default function NetWorthPage() {
                                   amount === undefined && "text-muted-foreground",
                                   liability && "text-destructive",
                                   item.type === "total" && (item.strong ? "font-semibold" : "text-muted-foreground"),
+                                  accountId && "cursor-text hover:bg-muted",
                                 )}
+                                onClick={accountId ? () => startCellEdit(accountId, month) : undefined}
+                                onKeyDown={accountId
+                                  ? (event) => {
+                                      if (event.key === "Enter") startCellEdit(accountId, month);
+                                    }
+                                  : undefined}
+                                tabIndex={accountId ? 0 : undefined}
+                                title={accountId ? "Click to edit" : undefined}
                               >
                                 {amount === undefined
                                   ? "—"
