@@ -335,37 +335,7 @@ export default function SpendingPage() {
               : "No spending yet"
           }
         />
-        <StatCard
-          label="Months Tracked"
-          value={String(data?.monthlySpending.length ?? 0)}
-        />
-        <StatCard
-          label="Categories"
-          value={String(data?.spendingByCategory.length ?? 0)}
-        />
-        <StatCard
-          label="Accounts"
-          value={String(data?.spendingByAccount.length ?? 0)}
-        />
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Spending by Month</CardTitle>
-          <CardDescription>
-            {filters.person === "COMBINED"
-              ? "Each category's spending, month by month. Expand a category to see each person's share."
-              : "Each category's spending, month by month."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <CategoryMonthTable
-            rows={categoryMonths}
-            people={activePeople}
-            combined={filters.person === "COMBINED"}
-          />
-        </CardContent>
-      </Card>
 
       <div className="grid gap-6 xl:grid-cols-2">
         <Card>
@@ -435,6 +405,24 @@ export default function SpendingPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Spending by Month</CardTitle>
+          <CardDescription>
+            {filters.person === "COMBINED"
+              ? "Each category's spending, month by month. Expand a category to see each person's share."
+              : "Each category's spending, month by month."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <CategoryMonthTable
+            rows={categoryMonths}
+            people={activePeople}
+            combined={filters.person === "COMBINED"}
+          />
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 xl:grid-cols-2">
         <Card>

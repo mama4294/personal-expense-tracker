@@ -2,6 +2,7 @@ import { requireAuth, jsonOk, jsonError, jsonDbError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { parseMonth, parseNetWorthCsv } from "@/lib/import-financials";
 import type { AssetType, LiabilityType } from "@/generated/prisma/client";
+import { accountInclude, netWorthOwner } from "@/lib/account-company";
 
 const JOINT_WORDS = ["", "combined", "joint", "household", "shared"];
 
@@ -55,17 +56,34 @@ export async function POST(request: Request) {
           let accountName = row.accountName;
           const assetType = row.kind === "asset" ? (row.type as AssetType) : null;
           const liabilityType = row.kind === "liability" ? (row.type as LiabilityType) : null;
-          let existing = await tx.netWorthAccount.findUnique({ where: { name: accountName } });
+          const find = (name: string) =>
+            tx.account.findUnique({ where: { name }, include: accountInclude });
+          let existing = await find(accountName);
           if (!existing && person) {
             accountName = `${row.accountName} (${person.name})`;
-            existing = await tx.netWorthAccount.findUnique({ where: { name: accountName } });
+            existing = await find(accountName);
           }
-          if (existing && (existing.assetType !== assetType || existing.liabilityType !== liabilityType || existing.personId !== (person?.id ?? null))) {
+          // A spending-only account picks up the category from the file.
+          const uncategorized = existing && !existing.assetType && !existing.liabilityType;
+          if (
+            existing
+            && ((!uncategorized && (existing.assetType !== assetType || existing.liabilityType !== liabilityType))
+              || (netWorthOwner(existing.splits)?.id ?? null) !== (person?.id ?? null))
+          ) {
             throw new Error(`Row ${row.line}: account "${accountName}" is configured with a different category or owner in Settings.`);
           }
-          const configured = existing ?? await tx.netWorthAccount.create({
-            data: { name: accountName, assetType, liabilityType, personId: person?.id ?? null },
-          });
+          const configured = existing
+            ? uncategorized
+              ? await tx.account.update({ where: { id: existing.id }, data: { assetType, liabilityType } })
+              : existing
+            : await tx.account.create({
+                data: {
+                  name: accountName,
+                  assetType,
+                  liabilityType,
+                  splits: person ? { create: { personId: person.id, percent: 100 } } : undefined,
+                },
+              });
 
           return {
             accountId: configured.id,

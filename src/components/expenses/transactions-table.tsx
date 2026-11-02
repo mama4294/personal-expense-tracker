@@ -43,6 +43,7 @@ import {
   type Person,
   type SplitRow,
 } from "@/components/people/split-editor";
+import { AccountName } from "@/components/net-worth/account-logo";
 import { PersonBadge } from "@/components/people/person-badge";
 import {
   accountLabel,
@@ -61,7 +62,12 @@ export type Transaction = {
   hasOverride: boolean;
   /** Excluded on its own; the category can also exclude it. */
   excludedFromSpending: boolean;
-  account: { id: string; name: string; nickname: string | null } | null;
+  account: {
+    id: string;
+    name: string;
+    nickname: string | null;
+    company: { name: string; logo: string | null } | null;
+  } | null;
   category: { id: string; name: string; excludedFromSpending: boolean } | null;
   tags: string[];
   splits: SplitRow[];
@@ -316,11 +322,28 @@ export function TransactionsTable({
                   <span>{transaction.category?.name ?? "—"}</span>
                   {transaction.excludedFromSpending ||
                   transaction.category?.excludedFromSpending ? (
-                    <Badge variant="warning">Excluded from spending</Badge>
+                    <Badge
+                      variant="warning"
+                      className="whitespace-nowrap"
+                      title="Excluded from spending totals, charts, and FI"
+                    >
+                      Excluded
+                    </Badge>
                   ) : null}
                 </div>
               </TableCell>
-              <TableCell>{accountLabel(transaction.account)}</TableCell>
+              <TableCell>
+                {transaction.account ? (
+                  <AccountName
+                    name={accountLabel(transaction.account)}
+                    company={transaction.account.company?.name}
+                    logo={transaction.account.company?.logo}
+                    className="max-w-48"
+                  />
+                ) : (
+                  accountLabel(null)
+                )}
+              </TableCell>
               <TableCell>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {transaction.splits.filter((split) => split.percent > 0).length > 0 ? (

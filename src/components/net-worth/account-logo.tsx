@@ -5,7 +5,7 @@ function initials(name: string) {
   return (words.length > 1 ? words[0][0] + words[1][0] : (words[0] ?? "?").slice(0, 2)).toUpperCase();
 }
 
-/** Small square account logo; falls back to the name's initials. */
+/** Small square company logo; falls back to the name's initials. */
 export function AccountLogo({
   name,
   logo,
@@ -39,19 +39,24 @@ export function AccountLogo({
   );
 }
 
-/** Logo + name on one line, for tables and lists. */
+/**
+ * Logo + name on one line, for tables and lists. The logo belongs to the
+ * account's company, so without one the initials are the company's too.
+ */
 export function AccountName({
   name,
+  company,
   logo,
   className,
 }: {
   name: string;
+  company?: string | null;
   logo?: string | null;
   className?: string;
 }) {
   return (
     <span className={cn("inline-flex min-w-0 items-center gap-2", className)}>
-      <AccountLogo name={name} logo={logo} />
+      <AccountLogo name={company || name} logo={logo} />
       <span className="truncate">{name}</span>
     </span>
   );

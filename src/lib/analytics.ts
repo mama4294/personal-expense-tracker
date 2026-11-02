@@ -121,7 +121,9 @@ export async function getTransactionsWithDetails(filters: DashboardFilters = {})
   return db.transaction.findMany({
     where: buildTransactionWhere(filters),
     include: {
-      account: { include: { splits: true } },
+      account: {
+        include: { splits: true, company: { select: { name: true, logo: true } } },
+      },
       category: true,
       splits: true,
       tags: { include: { tag: true } },
@@ -200,6 +202,7 @@ export async function getTransactionList(filters: DashboardFilters = {}) {
             id: transaction.account.id,
             name: transaction.account.name,
             nickname: transaction.account.nickname,
+            company: transaction.account.company,
           }
         : null,
       category: transaction.category
@@ -567,7 +570,9 @@ export async function getHomeDashboard(person: PersonFilter = "COMBINED") {
       balances: {
         include: {
           person: { select: { id: true, name: true } },
-          account: { select: { name: true, logo: true } },
+          account: {
+            select: { name: true, nickname: true, company: { select: { name: true, logo: true } } },
+          },
         },
       },
     },
@@ -622,8 +627,9 @@ export async function getHomeDashboard(person: PersonFilter = "COMBINED") {
     const amounts = history.get(accountKey(balance))!;
     return {
       key: accountKey(balance),
-      name: balance.account?.name ?? balance.accountName,
-      logo: balance.account?.logo ?? null,
+      name: balance.account ? accountLabel(balance.account) : balance.accountName,
+      company: balance.account?.company?.name ?? null,
+      logo: balance.account?.company?.logo ?? null,
       typeLabel: balance.assetType ? ASSET_LABELS[type] : LIABILITY_LABELS[type],
       group: groupForType(type),
       person: balance.person,
@@ -759,25 +765,99 @@ export async function getFiDashboard(person: PersonFilter = "COMBINED") {
  * whose they are.
  */
 export async function getCashFlow(person: PersonFilter = "COMBINED") {
-  const [transactions, people, paychecks, otherIncome] = await Promise.all([
+  // Everyone's income is loaded so Combined can also break each month out by
+  // person without another round trip; the filter is applied in memory.
+  const [transactions, people, allPaychecks, allOtherIncome] = await Promise.all([
     getTransactionsWithDetails({}),
     getActivePeople(),
     db.monthlyIncome.findMany({
-      where: person === "COMBINED" ? {} : { personId: person },
       include: {
         company: { select: { name: true } },
         person: { select: { name: true } },
       },
     }),
     db.income.findMany({
-      where: person === "COMBINED" ? {} : { personId: person },
-      select: { date: true, amount: true },
+      select: { date: true, amount: true, personId: true },
     }),
   ]);
 
   const activePersonIds = people.map((entry) => entry.id);
-  const mapped = mapTransactionAmounts(transactions, activePersonIds, person);
+  const forPerson = <T extends { personId: string }>(rows: T[], who: PersonFilter) =>
+    who === "COMBINED" ? rows : rows.filter((row) => row.personId === who);
 
+  const rows = buildCashFlowRows(
+    mapTransactionAmounts(transactions, activePersonIds, person),
+    forPerson(allPaychecks, person),
+    forPerson(allOtherIncome, person),
+  );
+
+  // Each person's own month, for the table's breakout. Only Combined needs it:
+  // a single person's view already is their breakdown.
+  if (person === "COMBINED") {
+    const perPerson = people.map((entry) => ({
+      personId: entry.id,
+      byMonth: new Map(
+        buildCashFlowRows(
+          mapTransactionAmounts(transactions, activePersonIds, entry.id),
+          forPerson(allPaychecks, entry.id),
+          forPerson(allOtherIncome, entry.id),
+        ).map((row) => [row.month, row]),
+      ),
+    }));
+
+    for (const row of rows) {
+      row.byPerson = perPerson.map(({ personId, byMonth }) => {
+        const own = byMonth.get(row.month);
+        return {
+          personId,
+          grossIncome: own?.grossIncome ?? 0,
+          otherIncome: own?.otherIncome ?? 0,
+          netIncome: own?.netIncome ?? 0,
+          retirement401k: own?.retirement401k ?? 0,
+          hsa: own?.hsa ?? 0,
+          expenses: own?.expenses ?? 0,
+          savings: own?.savings ?? 0,
+        };
+      });
+    }
+  }
+
+  const totals = rows.reduce(
+    (sum, row) => ({
+      netIncome: sum.netIncome + row.netIncome,
+      expenses: sum.expenses + row.expenses,
+      savings: sum.savings + row.savings,
+    }),
+    { netIncome: 0, expenses: 0, savings: 0 },
+  );
+
+  return { rows, totals };
+}
+
+export type CashFlowPersonMonth = {
+  personId: string;
+  grossIncome: number;
+  otherIncome: number;
+  netIncome: number;
+  retirement401k: number;
+  hsa: number;
+  expenses: number;
+  savings: number;
+};
+
+type CashFlowPaycheck = Prisma.MonthlyIncomeGetPayload<{
+  include: {
+    company: { select: { name: true } };
+    person: { select: { name: true } };
+  };
+}>;
+
+/** One row per month, newest first, from already person-filtered inputs. */
+function buildCashFlowRows(
+  mapped: ReturnType<typeof mapTransactionAmounts>,
+  paychecks: CashFlowPaycheck[],
+  otherIncome: { date: Date; amount: Prisma.Decimal }[],
+) {
   const expensesByMonth = new Map<string, number>();
   const categoriesByMonth = new Map<string, Map<string, number>>();
 
@@ -859,7 +939,7 @@ export async function getCashFlow(person: PersonFilter = "COMBINED") {
     ]),
   ).sort((a, b) => b.localeCompare(a));
 
-  const rows = months.map((month) => {
+  return months.map((month) => {
     const paycheck = paychecksByMonth.get(month) ?? emptyPaycheck();
     const other = otherByMonth.get(month) ?? 0;
     const expenses = expensesByMonth.get(month) ?? 0;
@@ -884,19 +964,9 @@ export async function getCashFlow(person: PersonFilter = "COMBINED") {
         .map(([name, entry]) => ({ name, ...entry }))
         .sort((a, b) => b.total - a.total),
       hasPaycheck: paychecksByMonth.has(month),
+      byPerson: undefined as CashFlowPersonMonth[] | undefined,
     };
   });
-
-  const totals = rows.reduce(
-    (sum, row) => ({
-      netIncome: sum.netIncome + row.netIncome,
-      expenses: sum.expenses + row.expenses,
-      savings: sum.savings + row.savings,
-    }),
-    { netIncome: 0, expenses: 0, savings: 0 },
-  );
-
-  return { rows, totals };
 }
 
 export async function upsertTags(tagNames: string[]) {

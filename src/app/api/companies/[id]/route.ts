@@ -1,10 +1,12 @@
 import { requireAuth, jsonOk, jsonError, jsonDbError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { z } from "zod";
+import { logoSchema } from "@/lib/logo";
 
 const updateSchema = z.object({
   name: z.string().min(1).max(80).optional(),
   isActive: z.boolean().optional(),
+  logo: logoSchema.nullable().optional(),
 });
 
 export async function PATCH(

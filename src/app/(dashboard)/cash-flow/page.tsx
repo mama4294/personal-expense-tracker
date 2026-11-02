@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Badge,
@@ -16,6 +17,7 @@ import { Slider } from "@/components/ui/slider";
 import { StatCard } from "@/components/charts/dashboard-charts";
 import { CashFlowSankey } from "@/components/charts/sankey-chart";
 import { PersonToggle } from "@/components/filters/person-toggle";
+import { PersonBadge } from "@/components/people/person-badge";
 import { savingsRate } from "@/lib/income";
 import { aggregateMonths } from "@/lib/cash-flow-range";
 import { personColor } from "@/lib/colors";
@@ -43,7 +45,49 @@ type CashFlowRow = {
   categories: { name: string; total: number }[];
   incomeByCompany: { name: string; total: number; personId: string }[];
   hasPaycheck: boolean;
+  /** Each person's own share of the month; only sent for Combined. */
+  byPerson?: PersonMonth[];
 };
+
+type PersonMonth = {
+  personId: string;
+  grossIncome: number;
+  otherIncome: number;
+  netIncome: number;
+  retirement401k: number;
+  hsa: number;
+  expenses: number;
+  savings: number;
+};
+
+/** A year per page, so one page always shows the last twelve months. */
+const PAGE_SIZE = 12;
+
+/** The money columns, shared by a month's row and its per-person rows. */
+function AmountCells({ row, muted }: { row: PersonMonth; muted?: boolean }) {
+  const rate = savingsRate(row.savings, row.netIncome);
+  const cell = cn("text-right tabular-nums", muted && "text-muted-foreground");
+  return (
+    <>
+      <TableCell className={cell}>{formatCurrency(row.grossIncome)}</TableCell>
+      <TableCell className={cn(cell, "text-muted-foreground")}>
+        {row.otherIncome > 0 ? formatCurrency(row.otherIncome) : "—"}
+      </TableCell>
+      <TableCell className={cell}>{formatCurrency(row.netIncome)}</TableCell>
+      <TableCell className={cell}>{formatCurrency(row.retirement401k)}</TableCell>
+      <TableCell className={cell}>{formatCurrency(row.hsa)}</TableCell>
+      <TableCell className={cell}>{formatCurrency(row.expenses)}</TableCell>
+      <TableCell
+        className={cn(cell, !muted && "font-medium", row.savings < 0 && "text-destructive")}
+      >
+        {formatCurrency(row.savings)}
+      </TableCell>
+      <TableCell className={cn(cell, row.savings < 0 && "text-destructive")}>
+        {rate == null ? "—" : formatPercent(rate)}
+      </TableCell>
+    </>
+  );
+}
 
 type CashFlowData = {
   rows: CashFlowRow[];
@@ -58,6 +102,8 @@ export default function CashFlowPage() {
   // filter changes, and indices would silently point at a different month.
   const [range, setRange] = useState<{ start: string; end: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const activePeople = people.filter((entry) => entry.isActive);
   const activeColor = personColor(
@@ -115,6 +161,21 @@ export default function CashFlowPage() {
     : null;
 
   const monthsInRange = new Set(inRange.map((row) => row.month));
+
+  // Clamped rather than reset, so switching person keeps you near where you were.
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const firstIndex = (currentPage - 1) * PAGE_SIZE;
+  const visible = rows.slice(firstIndex, firstIndex + PAGE_SIZE);
+
+  function toggle(month: string) {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(month)) next.delete(month);
+      else next.add(month);
+      return next;
+    });
+  }
 
   /** Moves the span without changing its length where the data allows. */
   function setSpan(length: number) {
@@ -176,98 +237,6 @@ export default function CashFlowPage() {
           hint="Net income + 401k + HSA − expenses"
         />
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Monthly Cash Flow</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Month</TableHead>
-                <TableHead className="text-right">Gross</TableHead>
-                <TableHead className="text-right">Other</TableHead>
-                <TableHead className="text-right">Net Income</TableHead>
-                <TableHead className="text-right">401k</TableHead>
-                <TableHead className="text-right">HSA</TableHead>
-                <TableHead className="text-right">Expenses</TableHead>
-                <TableHead className="text-right">Savings</TableHead>
-                <TableHead className="text-right">Savings Rate</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((row) => (
-                <TableRow
-                  key={row.month}
-                  onClick={() => setRange({ start: row.month, end: row.month })}
-                  className={cn(
-                    "cursor-pointer",
-                    monthsInRange.has(row.month) && "bg-primary/5",
-                  )}
-                >
-                  <TableCell className="whitespace-nowrap font-medium">
-                    {formatMonthLabel(row.month)}
-                    {row.hasPaycheck ? null : (
-                      <Badge variant="outline" className="ml-2">
-                        no paycheck
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatCurrency(row.grossIncome)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums text-muted-foreground">
-                    {row.otherIncome > 0
-                      ? formatCurrency(row.otherIncome)
-                      : "—"}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatCurrency(row.netIncome)}
-                  </TableCell>
-
-                  <TableCell className="text-right tabular-nums">
-                    {formatCurrency(row.retirement401k)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatCurrency(row.hsa)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatCurrency(row.expenses)}
-                  </TableCell>
-                  <TableCell
-                    className={cn(
-                      "text-right font-medium tabular-nums",
-                      row.savings < 0 && "text-destructive",
-                    )}
-                  >
-                    {formatCurrency(row.savings)}
-                  </TableCell>
-                  <TableCell
-                    className={cn(
-                      "text-right tabular-nums",
-                      row.savings < 0 && "text-destructive",
-                    )}
-                  >
-                    {(() => {
-                      const rate = savingsRate(row.savings, row.netIncome);
-                      return rate == null ? "—" : formatPercent(rate);
-                    })()}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {rows.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="text-muted-foreground">
-                    Nothing to show yet. Add paychecks on the Income page and
-                    import some expenses.
-                  </TableCell>
-                </TableRow>
-              ) : null}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader>
@@ -370,6 +339,138 @@ export default function CashFlowPage() {
               Pick a month in the table above.
             </p>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Monthly Cash Flow</CardTitle>
+          {person === "COMBINED" ? (
+            <p className="text-sm text-muted-foreground">
+              Click a month to chart it. Expand a month to see each person&apos;s share.
+            </p>
+          ) : null}
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Month</TableHead>
+                <TableHead className="text-right">Gross</TableHead>
+                <TableHead className="text-right">Other</TableHead>
+                <TableHead className="text-right">Net Income</TableHead>
+                <TableHead className="text-right">401k</TableHead>
+                <TableHead className="text-right">HSA</TableHead>
+                <TableHead className="text-right">Expenses</TableHead>
+                <TableHead className="text-right">Savings</TableHead>
+                <TableHead className="text-right">Savings Rate</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {visible.map((row) => {
+                const isOpen = Boolean(row.byPerson) && expanded.has(row.month);
+                return (
+                  <Fragment key={row.month}>
+                    <TableRow
+                      onClick={() => setRange({ start: row.month, end: row.month })}
+                      className={cn(
+                        "cursor-pointer",
+                        monthsInRange.has(row.month) && "bg-primary/5",
+                      )}
+                    >
+                      <TableCell className="whitespace-nowrap font-medium">
+                        <div className="flex items-center gap-1">
+                          {row.byPerson ? (
+                            <button
+                              type="button"
+                              aria-expanded={isOpen}
+                              aria-label={`${isOpen ? "Collapse" : "Expand"} ${formatMonthLabel(row.month)}`}
+                              className="-ml-1 rounded-md p-0.5 hover:bg-muted"
+                              // The row itself selects the month for the diagram.
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                toggle(row.month);
+                              }}
+                            >
+                              <ChevronRight
+                                className={cn(
+                                  "h-4 w-4 text-muted-foreground transition-transform",
+                                  isOpen && "rotate-90",
+                                )}
+                              />
+                            </button>
+                          ) : null}
+                          {formatMonthLabel(row.month)}
+                          {row.hasPaycheck ? null : (
+                            <Badge variant="outline" className="ml-2">
+                              no paycheck
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <AmountCells row={{ personId: "", ...row }} />
+                    </TableRow>
+                    {isOpen
+                      ? row.byPerson?.map((share) => {
+                          const owner = people.find((entry) => entry.id === share.personId);
+                          return (
+                            <TableRow key={share.personId} className="bg-muted/30">
+                              <TableCell className="pl-9">
+                                <PersonBadge
+                                  name={owner?.name ?? "Unknown"}
+                                  color={owner?.color}
+                                />
+                              </TableCell>
+                              <AmountCells row={share} muted />
+                            </TableRow>
+                          );
+                        })
+                      : null}
+                  </Fragment>
+                );
+              })}
+              {rows.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-muted-foreground">
+                    Nothing to show yet. Add paychecks on the Income page and
+                    import some expenses.
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </TableBody>
+          </Table>
+
+          {pageCount > 1 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3 text-sm">
+              <p className="text-muted-foreground">
+                {formatMonthLabel(visible[visible.length - 1].month)} –{" "}
+                {formatMonthLabel(visible[0].month)}
+              </p>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label="Newer months"
+                  disabled={currentPage <= 1}
+                  onClick={() => setPage(currentPage - 1)}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="min-w-[6rem] text-center tabular-nums text-muted-foreground">
+                  Page {currentPage} of {pageCount}
+                </span>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label="Older months"
+                  disabled={currentPage >= pageCount}
+                  onClick={() => setPage(currentPage + 1)}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
     </div>

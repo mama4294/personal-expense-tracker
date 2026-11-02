@@ -1,10 +1,12 @@
 import { requireAuth, jsonOk, jsonError, jsonDbError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { z } from "zod";
+import { logoSchema } from "@/lib/logo";
 
 const companySchema = z.object({
   name: z.string().min(1).max(80),
   personId: z.string().min(1),
+  logo: logoSchema.nullish(),
 });
 
 export async function GET() {
@@ -33,6 +35,7 @@ export async function POST(request: Request) {
       data: {
         name: parsed.data.name.trim(),
         personId: parsed.data.personId,
+        logo: parsed.data.logo ?? null,
       },
       include: { person: { select: { id: true, name: true } } },
     });

@@ -30,6 +30,7 @@ type Person = { id: string; name: string; isActive: boolean; color: string };
 type HomeAccount = {
   key: string;
   name: string;
+  company: string | null;
   logo: string | null;
   typeLabel: string;
   group: NetWorthGroupKey;
@@ -307,7 +308,7 @@ export default function HomePage() {
                         const trendGood = liability ? !trendUp : trendUp;
                         return (
                           <li key={account.key} className="flex items-center gap-4 px-5 py-3">
-                            <AccountLogo name={account.name} logo={account.logo} className="h-9 w-9 rounded-full text-xs" />
+                            <AccountLogo name={account.company || account.name} logo={account.logo} className="h-9 w-9 rounded-full text-xs" />
                             <div className="min-w-0 flex-1">
                               <p className="truncate font-medium">{account.name}</p>
                               <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

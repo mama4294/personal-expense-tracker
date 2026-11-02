@@ -1,6 +1,7 @@
 import { requireAuth, jsonOk, jsonError, jsonDbError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { z } from "zod";
+import { accountInclude, netWorthOwner } from "@/lib/account-company";
 
 const balanceSchema = z.object({
   accountId: z.string().min(1),
@@ -32,7 +33,7 @@ export async function GET() {
       balances: {
         include: {
           person: { select: { id: true, name: true } },
-          account: true,
+          account: { include: { company: { select: { name: true, logo: true } } } },
         },
       },
     },
@@ -53,9 +54,15 @@ export async function POST(request: Request) {
 
   const month = new Date(`${parsed.data.month}-01T00:00:00.000Z`);
   const accountIds = parsed.data.balances.map((balance) => balance.accountId);
-  const accounts = await db.netWorthAccount.findMany({ where: { id: { in: accountIds } } });
+  const accounts = await db.account.findMany({
+    where: { id: { in: accountIds } },
+    include: accountInclude,
+  });
   if (accounts.length !== accountIds.length) {
     return jsonError("One or more configured accounts no longer exist.");
+  }
+  if (accounts.some((account) => !account.assetType && !account.liabilityType)) {
+    return jsonError("Give every account a net worth category before entering its balance.");
   }
   const accountById = new Map(accounts.map((account) => [account.id, account]));
   const balances = parsed.data.balances.map((balance) => {
@@ -66,7 +73,7 @@ export async function POST(request: Request) {
       liabilityType: account.liabilityType,
       amount: balance.amount,
       accountName: account.name,
-      personId: account.personId,
+      personId: netWorthOwner(account.splits)?.id ?? null,
     };
   });
 
@@ -86,7 +93,7 @@ export async function POST(request: Request) {
         balances: {
           include: {
             person: { select: { id: true, name: true } },
-            account: true,
+            account: { include: { company: { select: { name: true, logo: true } } } },
           },
         },
       },
@@ -114,8 +121,14 @@ export async function PATCH(request: Request) {
 
   const { accountId, amount } = parsed.data;
   const month = new Date(`${parsed.data.month}-01T00:00:00.000Z`);
-  const account = await db.netWorthAccount.findUnique({ where: { id: accountId } });
+  const account = await db.account.findUnique({
+    where: { id: accountId },
+    include: accountInclude,
+  });
   if (!account) return jsonError("That account no longer exists.");
+  if (!account.assetType && !account.liabilityType) {
+    return jsonError("Give this account a net worth category before entering its balance.");
+  }
 
   try {
     await db.$transaction(async (tx) => {
@@ -144,7 +157,7 @@ export async function PATCH(request: Request) {
             assetType: account.assetType,
             liabilityType: account.liabilityType,
             accountName: account.name,
-            personId: account.personId,
+            personId: netWorthOwner(account.splits)?.id ?? null,
           },
         });
       }

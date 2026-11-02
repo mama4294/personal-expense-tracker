@@ -27,6 +27,7 @@ import { AccountName } from "@/components/net-worth/account-logo";
 import { PersonBadge } from "@/components/people/person-badge";
 import { NetWorthImportDialog } from "@/components/import/financial-import-dialogs";
 import {
+  accountLabel,
   ASSET_LABELS,
   cn,
   formatCurrency,
@@ -46,7 +47,11 @@ type Balance = {
   accountId: string | null;
   personId: string | null;
   person: { id: string; name: string } | null;
-  account: { name: string; logo: string | null } | null;
+  account: {
+    name: string;
+    nickname: string | null;
+    company: { name: string; logo: string | null } | null;
+  } | null;
 };
 
 type Snapshot = {
@@ -85,6 +90,7 @@ type HistoryRow = {
   /** Null for legacy rows that predate configured accounts; those can't take new balances. */
   accountId: string | null;
   name: string;
+  company: string | null;
   logo: string | null;
   kind: "asset" | "liability";
   type: string;
@@ -114,8 +120,9 @@ function historyRows(snapshots: Snapshot[], accounts: ConfiguredNetWorthAccount[
     rows.set(account.id, {
       key: account.id,
       accountId: account.id,
-      name: account.name,
-      logo: account.logo ?? null,
+      name: accountLabel(account),
+      company: account.company?.name ?? null,
+      logo: account.company?.logo ?? null,
       kind: account.assetType ? "asset" : "liability",
       type,
       person: account.person ?? null,
@@ -130,9 +137,10 @@ function historyRows(snapshots: Snapshot[], accounts: ConfiguredNetWorthAccount[
       const row = rows.get(key) ?? {
         key,
         accountId: balance.accountId,
-        name: balance.account?.name || balance.accountName
+        name: (balance.account ? accountLabel(balance.account) : balance.accountName)
           || (balance.assetType ? ASSET_LABELS[type] : LIABILITY_LABELS[type]),
-        logo: balance.account?.logo ?? null,
+        company: balance.account?.company?.name ?? null,
+        logo: balance.account?.company?.logo ?? null,
         kind: balance.assetType ? "asset" : "liability",
         type,
         person: balance.person,
@@ -142,8 +150,16 @@ function historyRows(snapshots: Snapshot[], accounts: ConfiguredNetWorthAccount[
       rows.set(key, row);
     }
   }
+  // Grouped by company so one institution's accounts sit together (Vanguard
+  // Brokerage beside Vanguard Roth IRA); accounts without one sort by their
+  // own name among them. Type only breaks ties.
+  const compare = (a: string, b: string) =>
+    a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
   return [...rows.values()].sort(
-    (a, b) => TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type) || a.name.localeCompare(b.name),
+    (a, b) =>
+      compare(a.company ?? a.name, b.company ?? b.name)
+      || compare(a.name, b.name)
+      || TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type),
   );
 }
 
@@ -171,7 +187,11 @@ function withBalance(
             accountId: account.id,
             personId: account.personId,
             person: account.person ?? null,
-            account: { name: account.name, logo: account.logo ?? null },
+            account: {
+              name: account.name,
+              nickname: account.nickname ?? null,
+              company: account.company ?? null,
+            },
           },
         ];
     return balances.length > 0 ? [{ ...snapshot, balances }] : [];
@@ -223,7 +243,7 @@ export default function NetWorthPage() {
       fetch(`/api/dashboard/net-worth?person=${person}`),
       fetch("/api/net-worth"),
       fetch("/api/people"),
-      fetch("/api/net-worth/accounts"),
+      fetch("/api/accounts"),
     ]);
 
     if (!dashboardResponse.ok || !snapshotResponse.ok || !peopleResponse.ok || !accountsResponse.ok) {
@@ -234,7 +254,9 @@ export default function NetWorthPage() {
     setData(await dashboardResponse.json());
     setSnapshots(await snapshotResponse.json());
     setPeople(await peopleResponse.json());
-    setNetWorthAccounts(await accountsResponse.json());
+    // Spending-only accounts have no balance to track here.
+    const accounts: ConfiguredNetWorthAccount[] = await accountsResponse.json();
+    setNetWorthAccounts(accounts.filter((account) => account.assetType || account.liabilityType));
   }, [person]);
 
   useEffect(() => {
@@ -607,9 +629,6 @@ export default function NetWorthPage() {
         <CardHeader className="flex-row flex-wrap items-start justify-between gap-4">
           <div className="space-y-1.5">
             <CardTitle>History</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Each account&apos;s balance, month by month. Click a balance to change it, or select a month to edit all of its balances.
-            </p>
           </div>
           {draft ? (
             <div className="flex flex-wrap items-center gap-2">
@@ -655,7 +674,7 @@ export default function NetWorthPage() {
                       ) : item.type === "account" ? (
                         <>
                           <td className="max-w-44 px-3">
-                            <AccountName name={item.row.name} logo={item.row.logo} className="max-w-full font-medium" />
+                            <AccountName name={item.row.name} company={item.row.company} logo={item.row.logo} className="max-w-full font-medium" />
                           </td>
                           <td className="px-3">
                             {item.row.person ? (
