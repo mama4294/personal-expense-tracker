@@ -8,6 +8,7 @@ const updateSchema = z.object({
   description: z.string().min(1).optional(),
   notes: z.string().optional(),
   categoryId: z.string().nullable().optional(),
+  excludedFromSpending: z.boolean().optional(),
   tags: z.array(z.string()).optional(),
   /// An empty array clears the override and falls back to the account default.
   splits: z

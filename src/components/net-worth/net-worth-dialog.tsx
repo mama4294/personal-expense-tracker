@@ -11,7 +11,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input, Textarea } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ASSET_LABELS, formatCurrency, LIABILITY_LABELS } from "@/lib/utils";
+import { AccountName } from "@/components/net-worth/account-logo";
+import { accountLabel, ASSET_LABELS, formatCurrency, LIABILITY_LABELS } from "@/lib/utils";
 
 export const COMBINED = "";
 
@@ -19,17 +20,23 @@ export type BalanceRow = {
   key: string;
   accountId: string;
   name: string;
+  company: string | null;
+  logo: string | null;
   category: string;
   personName: string;
   amount: string;
 };
 
+/** An account with a net worth category, as /api/accounts returns it. */
 export type ConfiguredNetWorthAccount = {
   id: string;
   name: string;
+  nickname?: string | null;
   assetType: string | null;
   liabilityType: string | null;
+  /** Derived from the splits: whoever holds 100%, else null for Combined. */
   personId: string | null;
+  company?: { name: string; logo: string | null } | null;
   person?: { id: string; name: string } | null;
 };
 
@@ -45,7 +52,9 @@ export function rowsForAccounts(
   return accounts.map((account) => ({
     key: account.id,
     accountId: account.id,
-    name: account.name,
+    name: accountLabel(account),
+    company: account.company?.name ?? null,
+    logo: account.company?.logo ?? null,
     category: account.assetType
       ? ASSET_LABELS[account.assetType]
       : LIABILITY_LABELS[account.liabilityType ?? ""],
@@ -162,7 +171,7 @@ export function NetWorthDialog({
                   return (
                     <div key={row.key} className="grid grid-cols-[1fr_150px] items-center gap-3 rounded-lg border border-border p-3 sm:border-0 sm:p-1">
                       <div>
-                        <p className="font-medium">{row.name}</p>
+                        <p className="font-medium"><AccountName name={row.name} company={row.company} logo={row.logo} /></p>
                         <p className="text-xs text-muted-foreground">{row.category} · {row.personName}</p>
                       </div>
                       <div className="space-y-1">

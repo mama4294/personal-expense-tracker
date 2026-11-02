@@ -23,7 +23,7 @@ const paycheckSchema = z.object({
 
 const include = {
   person: { select: { id: true, name: true } },
-  company: { select: { id: true, name: true } },
+  company: { select: { id: true, name: true, logo: true } },
 } as const;
 
 export async function GET() {

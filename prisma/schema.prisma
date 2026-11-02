@@ -50,7 +50,6 @@ model Person {
   transactionSplits TransactionSplit[]
   income            Income[]
   netWorthBalances  NetWorthBalance[]
-  netWorthAccounts  NetWorthAccount[]
   monthlyIncome     MonthlyIncome[]
   companies         Company[]
 
@@ -62,6 +61,8 @@ model Person {
 model Company {
   id            String          @id @default(cuid())
   name          String
+  /// Small square logo as an image data URL, resized client-side before upload.
+  logo          String?
   personId      String
   person        Person          @relation(fields: [personId], references: [id], onDelete: Cascade)
   isActive      Boolean         @default(true)
@@ -99,16 +100,40 @@ model MonthlyIncome {
   @@index([companyId])
 }
 
+/// Where an account is held (Vanguard, Chase), shown as "Company" in the app.
+/// Separate from Company, which is a person's employer. Owns the logo, so
+/// every account there shares one icon.
+model Institution {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  /// Small square logo as an image data URL, resized client-side before upload.
+  logo      String?
+  accounts  Account[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+/// Anything money moves through: a card that spending imports from, a balance
+/// tracked in net worth, or both.
 model Account {
-  id           String         @id @default(cuid())
+  id            String            @id @default(cuid())
   /// Must match the CSV export exactly; import relies on it.
-  name         String         @unique
+  name          String            @unique
   /// Friendly label shown in tables and charts. Falls back to name.
-  nickname     String?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  splits       AccountSplit[]
-  transactions Transaction[]
+  nickname      String?
+  companyId     String?
+  company       Institution?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  /// Set (one or the other) for accounts tracked in net worth; both null
+  /// means spending only.
+  assetType     AssetType?
+  liabilityType LiabilityType?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  splits        AccountSplit[]
+  transactions  Transaction[]
+  balances      NetWorthBalance[]
+
+  @@index([companyId])
 }
 
 /// Default ownership of an account. Percentages across one account sum to 100.
@@ -151,6 +176,8 @@ model Transaction {
   categoryId  String?
   category    Category? @relation(fields: [categoryId], references: [id])
   isManual    Boolean  @default(false)
+  /// Left out of spending totals and FI, regardless of its category.
+  excludedFromSpending Boolean @default(false)
   importHash  String?  @unique
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -209,20 +236,6 @@ model NetWorthSnapshot {
 }
 
 /// Accounts configured once in Settings and valued in each monthly snapshot.
-model NetWorthAccount {
-  id            String           @id @default(cuid())
-  name          String           @unique
-  assetType     AssetType?
-  liabilityType LiabilityType?
-  personId      String?
-  person        Person?          @relation(fields: [personId], references: [id], onDelete: Restrict)
-  balances      NetWorthBalance[]
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-
-  @@index([personId])
-}
-
 model NetWorthBalance {
   id            String           @id @default(cuid())
   snapshotId    String
@@ -233,13 +246,14 @@ model NetWorthBalance {
   /// User-facing institution/account label, e.g. "Vanguard Brokerage".
   accountName   String            @default("")
   accountId     String?
-  account       NetWorthAccount?  @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  account       Account?          @relation(fields: [accountId], references: [id], onDelete: Restrict)
   /// Whose account this is. Null means it belongs to the household jointly.
   personId      String?
   person        Person?          @relation(fields: [personId], references: [id], onDelete: Restrict)
 
   @@index([snapshotId])
   @@index([personId])
+  @@index([accountId])
 }
 
 model AppSettings {

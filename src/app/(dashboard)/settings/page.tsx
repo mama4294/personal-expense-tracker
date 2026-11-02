@@ -23,6 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ColorDot } from "@/components/settings/color-picker";
+import { AccountName } from "@/components/net-worth/account-logo";
 import { PersonBadge } from "@/components/people/person-badge";
 import {
   AccountDialog,
@@ -30,7 +31,6 @@ import {
   CompanyDialog,
   LoginDialog,
   MergeCategoryDialog,
-  NetWorthAccountDialog,
   PasswordDialog,
   PersonDialog,
   SplitCategoryDialog,
@@ -48,14 +48,9 @@ type Account = {
   name: string;
   nickname: string | null;
   splits: SplitRow[];
-};
-type NetWorthAccount = {
-  id: string;
-  name: string;
   assetType: string | null;
   liabilityType: string | null;
-  personId: string | null;
-  person: { id: string; name: string } | null;
+  company: { id: string; name: string; logo: string | null } | null;
 };
 type Category = {
   id: string;
@@ -67,6 +62,7 @@ type Login = { id: string; username: string; name: string; createdAt: string };
 type Company = {
   id: string;
   name: string;
+  logo: string | null;
   personId: string;
   isActive: boolean;
   person: { id: string; name: string };
@@ -80,7 +76,6 @@ type DialogState =
   | { kind: "person"; person: Person | null }
   | { kind: "company"; company: Company | null; defaultPersonId?: string }
   | { kind: "account"; account: Account | null }
-  | { kind: "netWorthAccount"; account: NetWorthAccount | null }
   | { kind: "category"; category: Category | null }
   | { kind: "merge"; category: Category }
   | { kind: "split"; category: Category }
@@ -89,7 +84,6 @@ type DialogState =
 
 export default function SettingsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [netWorthAccounts, setNetWorthAccounts] = useState<NetWorthAccount[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -101,6 +95,12 @@ export default function SettingsPage() {
   const [dialog, setDialog] = useState<DialogState>({ kind: "none" });
 
   const activePeople = people.filter((person) => person.isActive);
+  // Companies only exist through their accounts, so the accounts list them all.
+  const accountCompanies = [
+    ...new Map(
+      accounts.flatMap((account) => (account.company ? [[account.company.id, account.company]] : [])),
+    ).values(),
+  ].sort((a, b) => a.name.localeCompare(b.name));
   const close = () => setDialog({ kind: "none" });
 
   const loadSettings = useCallback(async () => {
@@ -110,14 +110,12 @@ export default function SettingsPage() {
       peopleResponse,
       loginResponse,
       companyResponse,
-      netWorthAccountResponse,
     ] = await Promise.all([
       fetch("/api/accounts"),
       fetch("/api/settings"),
       fetch("/api/people"),
       fetch("/api/users"),
       fetch("/api/companies"),
-      fetch("/api/net-worth/accounts"),
     ]);
 
     if (
@@ -126,7 +124,6 @@ export default function SettingsPage() {
       !peopleResponse.ok ||
       !loginResponse.ok ||
       !companyResponse.ok
-      || !netWorthAccountResponse.ok
     ) {
       setMessage({ tone: "error", text: "Could not load settings." });
       return;
@@ -141,7 +138,6 @@ export default function SettingsPage() {
     setPeople(await peopleResponse.json());
     setLogins(await loginResponse.json());
     setCompanies(await companyResponse.json());
-    setNetWorthAccounts(await netWorthAccountResponse.json());
   }, []);
 
   useEffect(() => {
@@ -213,7 +209,6 @@ export default function SettingsPage() {
           <TabsTrigger value="people">People</TabsTrigger>
           <TabsTrigger value="companies">Companies</TabsTrigger>
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
-          <TabsTrigger value="netWorthAccounts">Net Worth Accounts</TabsTrigger>
           <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="fi">FI Settings</TabsTrigger>
           <TabsTrigger value="logins">Logins</TabsTrigger>
@@ -366,7 +361,9 @@ export default function SettingsPage() {
                 <TableBody>
                   {companies.map((company) => (
                     <TableRow key={company.id}>
-                      <TableCell className="font-medium">{company.name}</TableCell>
+                      <TableCell>
+                        <AccountName name={company.name} logo={company.logo} className="font-medium" />
+                      </TableCell>
                       <TableCell>
                         <PersonBadge
                           name={company.person.name}
@@ -386,7 +383,7 @@ export default function SettingsPage() {
                           <DropdownMenuItem
                             onSelect={() => setDialog({ kind: "company", company })}
                           >
-                            Rename
+                            Edit
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onSelect={() =>
@@ -443,8 +440,9 @@ export default function SettingsPage() {
               <div>
                 <CardTitle>Accounts</CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  Each account carries a default split. Imported transactions
-                  inherit it, so changing the shares re-attributes its history.
+                  Every account, for spending and net worth. Imported transactions
+                  inherit its default split, so changing the shares re-attributes
+                  its history. Give it a net worth category to track its balance.
                 </p>
               </div>
               <Button
@@ -459,8 +457,9 @@ export default function SettingsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Nickname</TableHead>
-                    <TableHead>CSV Name</TableHead>
+                    <TableHead>Account</TableHead>
+                    <TableHead>Company</TableHead>
+                    <TableHead>Net Worth</TableHead>
                     <TableHead>Split</TableHead>
                     <TableHead>Shares</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -469,11 +468,28 @@ export default function SettingsPage() {
                 <TableBody>
                   {accounts.map((account) => (
                     <TableRow key={account.id}>
-                      <TableCell className="font-medium">
-                        {accountLabel(account)}
+                      <TableCell>
+                        <AccountName
+                          name={accountLabel(account)}
+                          company={account.company?.name}
+                          logo={account.company?.logo}
+                          className="max-w-64 font-medium"
+                        />
+                        {account.nickname ? (
+                          <p className="pl-7 text-xs text-muted-foreground">{account.name}</p>
+                        ) : null}
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {account.name}
+                      <TableCell>
+                        {account.company?.name ?? <span className="text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell>
+                        {account.assetType || account.liabilityType ? (
+                          account.assetType
+                            ? ASSET_LABELS[account.assetType]
+                            : LIABILITY_LABELS[account.liabilityType ?? ""]
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         {describeSplitRows(account.splits, people)}
@@ -527,64 +543,11 @@ export default function SettingsPage() {
                   ))}
                   {accounts.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-muted-foreground">
+                      <TableCell colSpan={6} className="text-muted-foreground">
                         No accounts yet.
                       </TableCell>
                     </TableRow>
                   ) : null}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* --- Net worth accounts --- */}
-        <TabsContent value="netWorthAccounts">
-          <Card>
-            <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
-              <div>
-                <CardTitle>Net Worth Accounts</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Configure account names and categories once. They will appear in every monthly balance form.
-                </p>
-              </div>
-              <Button onClick={() => setDialog({ kind: "netWorthAccount", account: null })}>
-                <Plus className="h-4 w-4" /> Add Account
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader><TableRow>
-                  <TableHead>Account</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Owner</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow></TableHeader>
-                <TableBody>
-                  {netWorthAccounts.map((account) => (
-                    <TableRow key={account.id}>
-                      <TableCell className="font-medium">{account.name}</TableCell>
-                      <TableCell>{account.assetType ? ASSET_LABELS[account.assetType] : LIABILITY_LABELS[account.liabilityType ?? ""]}</TableCell>
-                      <TableCell>
-                        {account.person ? (
-                          <PersonBadge
-                            name={account.person.name}
-                            color={people.find((person) => person.id === account.person?.id)?.color}
-                          />
-                        ) : (
-                          <Badge variant="outline">Combined</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <RowActions label={`Actions for ${account.name}`} disabled={saving}>
-                          <DropdownMenuItem onSelect={() => setDialog({ kind: "netWorthAccount", account })}>Edit</DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem destructive onSelect={() => confirmThen(`Delete ${account.name}?`, () => mutate(`/api/net-worth/accounts/${account.id}`, { method: "DELETE" }, "Net worth account deleted."))}>Delete</DropdownMenuItem>
-                        </RowActions>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {netWorthAccounts.length === 0 ? <TableRow><TableCell colSpan={4} className="text-muted-foreground">No net worth accounts configured yet.</TableCell></TableRow> : null}
                 </TableBody>
               </Table>
             </CardContent>
@@ -873,7 +836,7 @@ export default function SettingsPage() {
           dialog.kind === "company" && dialog.company
             ? mutate(
                 `/api/companies/${dialog.company.id}`,
-                { method: "PATCH", body: JSON.stringify({ name: values.name }) },
+                { method: "PATCH", body: JSON.stringify({ name: values.name, logo: values.logo }) },
                 `${values.name} updated.`,
               )
             : mutate(
@@ -889,6 +852,7 @@ export default function SettingsPage() {
         onOpenChange={(open) => (open ? null : close())}
         account={dialog.kind === "account" ? dialog.account : null}
         people={activePeople}
+        companies={accountCompanies}
         onSave={(values) =>
           dialog.kind === "account" && dialog.account
             ? mutate(
@@ -900,26 +864,6 @@ export default function SettingsPage() {
                 "/api/accounts",
                 { method: "POST", body: JSON.stringify(values) },
                 "Account added.",
-              )
-        }
-      />
-
-      <NetWorthAccountDialog
-        open={dialog.kind === "netWorthAccount"}
-        onOpenChange={(open) => (open ? null : close())}
-        account={dialog.kind === "netWorthAccount" ? dialog.account : null}
-        people={activePeople}
-        onSave={(values) =>
-          dialog.kind === "netWorthAccount" && dialog.account
-            ? mutate(
-                `/api/net-worth/accounts/${dialog.account.id}`,
-                { method: "PATCH", body: JSON.stringify(values) },
-                "Net worth account updated.",
-              )
-            : mutate(
-                "/api/net-worth/accounts",
-                { method: "POST", body: JSON.stringify(values) },
-                "Net worth account added.",
               )
         }
       />

@@ -1,5 +1,6 @@
 "use client";
 
+import { AccountName } from "@/components/net-worth/account-logo";
 import { useCallback, useEffect, useState } from "react";
 import { Copy, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -63,7 +64,7 @@ type Paycheck = {
   personId: string;
   person: { id: string; name: string };
   companyId: string | null;
-  company: { id: string; name: string } | null;
+  company: { id: string; name: string; logo: string | null } | null;
   annualSalary: string;
   grossIncome: string;
   medical: string;
@@ -400,7 +401,7 @@ export default function IncomePage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Paychecks ({paychecks.length})</CardTitle>
+          <CardTitle>Paychecks</CardTitle>
           <p className="text-sm text-muted-foreground">
             One row per pay date. Charts and cash flow combine paychecks by
             calendar month. Net is what reached the bank; 401k and HSA are saved
@@ -438,7 +439,13 @@ export default function IncomePage() {
                         color={people.find((person) => person.id === entry.personId)?.color}
                       />
                     </TableCell>
-                    <TableCell>{entry.company?.name ?? "—"}</TableCell>
+                    <TableCell>
+                      {entry.company ? (
+                        <AccountName name={entry.company.name} logo={entry.company.logo} />
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {formatCurrency(Number(entry.annualSalary))}
                     </TableCell>
@@ -505,7 +512,7 @@ export default function IncomePage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Other Income ({entries.length})</CardTitle>
+          <CardTitle>Other Income</CardTitle>
           <p className="text-sm text-muted-foreground">
             One-off income that isn&apos;t part of a paycheck — dividends, side work,
             gifts.

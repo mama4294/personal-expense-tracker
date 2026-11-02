@@ -15,7 +15,9 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -27,7 +29,9 @@ import {
   type Person,
   type SplitRow,
 } from "@/components/people/split-editor";
+import { AccountLogo } from "@/components/net-worth/account-logo";
 import { DEFAULT_PERSON_COLOR } from "@/lib/colors";
+import { fileToLogoDataUrl } from "@/lib/logo";
 import { ASSET_LABELS, LIABILITY_LABELS } from "@/lib/utils";
 
 type SaveResult = { ok: boolean; error?: string };
@@ -170,6 +174,65 @@ export function PersonDialog({
 
 // --- Companies ---------------------------------------------------------------
 
+/** Upload, preview and remove a small square logo. */
+function LogoField({
+  id,
+  label,
+  name,
+  logo,
+  onChange,
+  hint,
+}: {
+  id: string;
+  label: string;
+  /** Whose initials stand in when there's no logo. */
+  name: string;
+  logo: string | null;
+  onChange: (logo: string | null) => void;
+  hint: string;
+}) {
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      <div className="flex items-center gap-3">
+        <AccountLogo name={name} logo={logo} className="h-10 w-10 text-xs" />
+        <Button variant="outline" size="sm" asChild>
+          <label htmlFor={id} className="cursor-pointer">
+            {logo ? "Change" : "Upload"}
+          </label>
+        </Button>
+        <input
+          id={id}
+          type="file"
+          accept="image/*"
+          className="sr-only"
+          onChange={async (event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (!file) return;
+            try {
+              onChange(await fileToLogoDataUrl(file));
+              setError(null);
+            } catch (readError) {
+              setError(readError instanceof Error ? readError.message : "Could not read the image.");
+            }
+          }}
+        />
+        {logo ? (
+          <Button type="button" variant="ghost" size="sm" onClick={() => onChange(null)}>
+            Remove
+          </Button>
+        ) : null}
+      </div>
+      <p className={error ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
+        {error ?? hint}
+      </p>
+    </div>
+  );
+}
+
 export function CompanyDialog({
   open,
   onOpenChange,
@@ -180,13 +243,14 @@ export function CompanyDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  company: { id: string; name: string; personId: string } | null;
+  company: { id: string; name: string; personId: string; logo: string | null } | null;
   people: { id: string; name: string }[];
   defaultPersonId?: string;
-  onSave: (values: { name: string; personId: string }) => Promise<SaveResult>;
+  onSave: (values: { name: string; personId: string; logo: string | null }) => Promise<SaveResult>;
 }) {
   const [name, setName] = useState("");
   const [personId, setPersonId] = useState("");
+  const [logo, setLogo] = useState<string | null>(null);
   const [seeded, setSeeded] = useState<string | null>(null);
 
   const key = company?.id ?? `new-${defaultPersonId ?? ""}`;
@@ -194,6 +258,7 @@ export function CompanyDialog({
     setSeeded(key);
     setName(company?.name ?? "");
     setPersonId(company?.personId ?? defaultPersonId ?? "");
+    setLogo(company?.logo ?? null);
   }
   if (!open && seeded !== null) setSeeded(null);
 
@@ -205,7 +270,7 @@ export function CompanyDialog({
       description="Where a person earns. Paychecks are recorded against a company."
       submitLabel={company ? "Save Changes" : "Add Company"}
       canSubmit={name.trim().length > 0 && personId.length > 0}
-      onSubmit={() => onSave({ name: name.trim(), personId })}
+      onSubmit={() => onSave({ name: name.trim(), personId, logo })}
     >
       <div className="space-y-2">
         <Label htmlFor="company-name">Name</Label>
@@ -216,6 +281,14 @@ export function CompanyDialog({
           autoFocus
         />
       </div>
+      <LogoField
+        id="company-logo"
+        label="Logo"
+        name={name || "?"}
+        logo={logo}
+        onChange={setLogo}
+        hint="Optional. Shown next to the company on paychecks; initials are used otherwise."
+      />
       <div className="space-y-2">
         <Label>Person</Label>
         <Select
@@ -242,11 +315,17 @@ export function CompanyDialog({
 
 // --- Accounts ----------------------------------------------------------------
 
+const NONE = "none";
+
+/** The account's company and its logo, as the dialog edits them. */
+export type AccountCompanyOption = { name: string; logo: string | null };
+
 export function AccountDialog({
   open,
   onOpenChange,
   account,
   people,
+  companies,
   onSave,
 }: {
   open: boolean;
@@ -256,17 +335,30 @@ export function AccountDialog({
     name: string;
     nickname: string | null;
     splits: SplitRow[];
+    assetType: string | null;
+    liabilityType: string | null;
+    company: AccountCompanyOption | null;
   } | null;
   people: Person[];
+  /** Existing companies, offered as suggestions and the source of their logos. */
+  companies: AccountCompanyOption[];
   onSave: (values: {
     name: string;
     nickname: string;
     splits: SplitRow[];
+    assetType: string | null;
+    liabilityType: string | null;
+    company: AccountCompanyOption | null;
   }) => Promise<SaveResult>;
 }) {
   const [name, setName] = useState("");
   const [nickname, setNickname] = useState("");
   const [splits, setSplits] = useState<SplitRow[]>([]);
+  const [category, setCategory] = useState(NONE);
+  const [company, setCompany] = useState("");
+  const [logo, setLogo] = useState<string | null>(null);
+  // Until a logo is picked here, it follows whichever company is typed.
+  const [logoTouched, setLogoTouched] = useState(false);
   const [seeded, setSeeded] = useState<string | null>(null);
 
   const key = account?.id ?? "new";
@@ -275,17 +367,31 @@ export function AccountDialog({
     setName(account?.name ?? "");
     setNickname(account?.nickname ?? "");
     setSplits(account?.splits?.length ? account.splits : evenSplit(people));
+    setCategory(account?.assetType ?? account?.liabilityType ?? NONE);
+    setCompany(account?.company?.name ?? "");
+    setLogo(account?.company?.logo ?? null);
+    setLogoTouched(false);
   }
   if (!open && seeded !== null) setSeeded(null);
 
   const balanced = splitTotal(splits) === 100;
+  const companyName = company.trim();
+
+  function changeCompany(next: string) {
+    setCompany(next);
+    if (logoTouched) return;
+    const match = companies.find(
+      (entry) => entry.name.toLowerCase() === next.trim().toLowerCase(),
+    );
+    setLogo(match?.logo ?? null);
+  }
 
   return (
     <FormDialog
       open={open}
       onOpenChange={onOpenChange}
       title={account ? "Edit Account" : "Add Account"}
-      description="The name must match your CSV exports exactly. The nickname is what you'll see on tables and charts."
+      description="One account for spending and net worth. The name must match your CSV exports exactly; the nickname is what you'll see on tables and charts."
       submitLabel={account ? "Save Changes" : "Add Account"}
       canSubmit={name.trim().length > 0 && balanced}
       wide
@@ -294,6 +400,9 @@ export function AccountDialog({
           name: name.trim(),
           nickname: nickname.trim(),
           splits: splits.filter((split) => split.percent > 0),
+          assetType: ASSET_LABELS[category] ? category : null,
+          liabilityType: LIABILITY_LABELS[category] ? category : null,
+          company: companyName ? { name: companyName, logo } : null,
         })
       }
     >
@@ -320,8 +429,63 @@ export function AccountDialog({
         </p>
       </div>
       <div className="space-y-2">
+        <Label htmlFor="account-company">Company</Label>
+        <Input
+          id="account-company"
+          list="account-company-options"
+          placeholder="Vanguard"
+          value={company}
+          onChange={(event) => changeCompany(event.target.value)}
+        />
+        <datalist id="account-company-options">
+          {companies.map((entry) => (
+            <option key={entry.name} value={entry.name} />
+          ))}
+        </datalist>
+        <p className="text-xs text-muted-foreground">
+          Optional. Accounts at the same company share its logo and sit together in net worth.
+        </p>
+      </div>
+      {companyName ? (
+        <LogoField
+          id="account-company-logo"
+          label={`${companyName} logo`}
+          name={companyName}
+          logo={logo}
+          onChange={(next) => {
+            setLogo(next);
+            setLogoTouched(true);
+          }}
+          hint="Changes the logo on every account at this company. Initials are used otherwise."
+        />
+      ) : null}
+      <div className="space-y-2">
+        <Label>Net worth category</Label>
+        <Select value={category} onValueChange={setCategory}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE}>Not tracked in net worth</SelectItem>
+            <SelectGroup>
+              <SelectLabel>Assets</SelectLabel>
+              {Object.entries(ASSET_LABELS).map(([value, label]) => (
+                <SelectItem key={value} value={value}>{label}</SelectItem>
+              ))}
+            </SelectGroup>
+            <SelectGroup>
+              <SelectLabel>Liabilities</SelectLabel>
+              {Object.entries(LIABILITY_LABELS).map(([value, label]) => (
+                <SelectItem key={value} value={value}>{label}</SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
         <Label>Default split</Label>
         <SplitEditor people={people} splits={splits} onChange={setSplits} />
+        <p className="text-xs text-muted-foreground">
+          Net worth counts the account as one person&apos;s only when they hold 100%; any other split is Combined.
+        </p>
       </div>
     </FormDialog>
   );
@@ -608,111 +772,6 @@ export function PasswordDialog({
           onChange={(event) => setNew(event.target.value)}
         />
         <p className="text-xs text-muted-foreground">At least 8 characters.</p>
-      </div>
-    </FormDialog>
-  );
-}
-
-// --- Net worth accounts ------------------------------------------------------
-
-const NET_WORTH_ASSETS = Object.keys(ASSET_LABELS);
-const NET_WORTH_LIABILITIES = Object.keys(LIABILITY_LABELS);
-
-export function NetWorthAccountDialog({
-  open,
-  onOpenChange,
-  account,
-  people,
-  onSave,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  account: {
-    id: string;
-    name: string;
-    assetType: string | null;
-    liabilityType: string | null;
-    personId: string | null;
-  } | null;
-  people: { id: string; name: string }[];
-  onSave: (values: {
-    name: string;
-    assetType: string | null;
-    liabilityType: string | null;
-    personId: string | null;
-  }) => Promise<SaveResult>;
-}) {
-  const [name, setName] = useState("");
-  const [kind, setKind] = useState<"asset" | "liability">("asset");
-  const [type, setType] = useState(NET_WORTH_ASSETS[0]);
-  const [personId, setPersonId] = useState("combined");
-  const [seeded, setSeeded] = useState<string | null>(null);
-  const key = account?.id ?? "new";
-  if (open && seeded !== key) {
-    setSeeded(key);
-    const nextKind = account?.liabilityType ? "liability" : "asset";
-    setKind(nextKind);
-    setType(account?.assetType ?? account?.liabilityType ?? NET_WORTH_ASSETS[0]);
-    setName(account?.name ?? "");
-    setPersonId(account?.personId ?? "combined");
-  }
-  if (!open && seeded !== null) setSeeded(null);
-
-  return (
-    <FormDialog
-      open={open}
-      onOpenChange={onOpenChange}
-      title={account ? "Edit Net Worth Account" : "Add Net Worth Account"}
-      description="Configure each account once. Monthly balance entry will show it automatically."
-      submitLabel={account ? "Save Changes" : "Add Account"}
-      canSubmit={name.trim().length > 0}
-      onSubmit={() => onSave({
-        name: name.trim(),
-        assetType: kind === "asset" ? type : null,
-        liabilityType: kind === "liability" ? type : null,
-        personId: personId === "combined" ? null : personId,
-      })}
-    >
-      <div className="space-y-2">
-        <Label htmlFor="net-worth-account-name">Account name</Label>
-        <Input id="net-worth-account-name" value={name} onChange={(event) => setName(event.target.value)} autoFocus placeholder="Vanguard Brokerage" />
-      </div>
-      <div className="space-y-2">
-        <Label>Account kind</Label>
-        <Select value={kind} onValueChange={(value) => {
-          const nextKind = value as "asset" | "liability";
-          setKind(nextKind);
-          setType(nextKind === "asset" ? NET_WORTH_ASSETS[0] : NET_WORTH_LIABILITIES[0]);
-        }}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="asset">Asset</SelectItem>
-            <SelectItem value="liability">Liability</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="space-y-2">
-        <Label>Category</Label>
-        <Select value={type} onValueChange={setType}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {(kind === "asset" ? NET_WORTH_ASSETS : NET_WORTH_LIABILITIES).map((item) => (
-              <SelectItem key={item} value={item}>
-                {(kind === "asset" ? ASSET_LABELS : LIABILITY_LABELS)[item]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="space-y-2">
-        <Label>Owner</Label>
-        <Select value={personId} onValueChange={setPersonId}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="combined">Combined</SelectItem>
-            {people.map((person) => <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
       </div>
     </FormDialog>
   );
